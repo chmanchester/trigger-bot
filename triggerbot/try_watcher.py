@@ -14,10 +14,10 @@ from collections import defaultdict
 
 
 from mozillapulse import consumers
-from mozlog.structured import commandline
+from mozlog.structured import commandline, get_default_logger
 
 
-logger = None
+logger = get_default_logger()
 # Never trigger jobs managed by autoland.
 autoland_user = 'bind-autoland@mozilla.com'
 conf_path = '../scratch/conf.json'
@@ -43,6 +43,7 @@ class TryWatcher(object):
 
     def __init__(self, ldap_auth):
         self.revmap = defaultdict(dict)
+        self.revmap_threshold = TryWatcher.revmap_threshold
         self.auth = ldap_auth
         self.trigger_limit = TryWatcher.default_retry * TryWatcher.per_push_failures
 
@@ -57,20 +58,21 @@ class TryWatcher(object):
         # as an incoming revision and the next time it's finished and potentially
         # failed, but it could be pending for a while so we don't know how long that
         # will be.
-        prune_count = int(TryWatcher.revmap_threshold / 3)
+        target_count = int(TryWatcher.revmap_threshold * 2/3)
+        prune_count = len(self.revmap.keys()) - target_count
         logger.info('Pruning %d entries from the revmap' % prune_count)
 
         # Could/should use an LRU cache here, but assuming any job will go
         # from pending to complete in 24 hrs and we have up to 528 pushes a
         # day (like we had last April fool's day), that's still just 528
         # entries to sort.
-        for rev, data in sorted(self.revmap.items(), lambda k, v: v['time_seen']):
+        for rev, data in sorted(self.revmap.items(), key=lambda (k, v): v['time_seen']):
             if not prune_count:
                 logger.info('Finished pruning, oldest rev is now: %s' %
-                            data['time_seen'])
+                            rev)
                 return
 
-            del self.rev_map[rev]
+            del self.revmap[rev]
             prune_count -= 1
 
 
@@ -93,7 +95,7 @@ class TryWatcher(object):
             count = self.revmap[rev]['fail_retrigger']
             seen = self.revmap[rev]['rev_trigger_count']
 
-            if seen > self.trigger_limit:
+            if seen >= self.trigger_limit:
                 logger.info('Would have triggered "%s" at %s but there are already '
                             'too many failures.' % (builder, rev))
                 return
@@ -118,13 +120,11 @@ class TryWatcher(object):
             seen_builders.add(builder)
             count = self.revmap[rev]['requested_trigger']
             logger.info('Triggering %d requested jobs for "%s" at %s' %
-                        (requested, builder, rev))
-            trigger_n_times(branch, rev, builder, count)
+                        (count, builder, rev))
+            self.trigger_n_times(branch, rev, builder, count)
 
 
     def add_rev(self, branch, rev, comments, files):
-        if len(self.revmap.keys()) > TryWatcher.revmap_threshold:
-            self._prune_revmap()
 
         req_count = self.trigger_count_from_msg(comments)
 
@@ -138,13 +138,16 @@ class TryWatcher(object):
         self.revmap[rev]['rev_trigger_count'] = 0
         self.revmap[rev]['comments'] = comments
         self.revmap[rev]['files'] = files
-        # When we need to purge old revisions, we'll want to purge the
-        # oldest.
+        # When we need to purge old revisions, we need to purge the
+        # oldest first.
         self.revmap[rev]['time_seen'] = time.time()
 
         # Prevent an infinite retrigger loop - if we take a trigger action,
         # ensure we only take it once for a builder on a particular revision.
         self.revmap[rev]['seen_builders'] = set()
+
+        if len(self.revmap.keys()) > self.revmap_threshold:
+            self._prune_revmap()
 
 
     def trigger_count_from_msg(self, msg):
@@ -166,6 +169,24 @@ class TryWatcher(object):
         parser.add_argument('--rebuild', type=int, default=0)
         (args, _) = parser.parse_known_args(all_try_args)
         return args.rebuild
+
+
+    def handle_message(self, key, branch, rev, builder, status,
+                       comments, files):
+        if not self.known_rev(branch, rev) and comments:
+            # First time we've seen this revision? Add it to known
+            # revs and mark required triggers,
+            self.add_rev(branch, rev, comments, files)
+
+        if key.endswith('started'):
+            # If the job is starting and a user requested unconditional
+            # retriggers, process them right away.
+            self.requested_trigger(branch, rev, builder)
+
+        if status in (1, 2):
+            # A failing job is a candidate to retrigger.
+            self.failure_trigger(branch, rev, builder)
+
 
     def trigger_n_times(self, branch, rev, builder, count):
 
@@ -244,24 +265,23 @@ def handle_message(data, message):
 
     message.ack()
     key = data['_meta']['routing_key']
-    branch, rev, builder, status, is_test, files, comments, user = extract_payload(data['payload'], key)
+    (branch, rev, builder, status,
+     is_test, files, comments, user) = extract_payload(data['payload'], key)
+
+
+    logger.info('%s %s' % (user, key))
 
     if not all([branch == 'try',
                 is_test,
                 trigger_bot_user(user)]):
         return
 
-    if not tw.known_rev(branch, rev) and comments:
-        logger.info('%s is a trigger bot user' % user)
-        logger.info('%s pushed %s with "%s"' % (user, rev, comments))
-        logger.info('Files: %s' % files)
-        tw.add_rev(branch, rev, comments, files)
+    logger.info('%s is a trigger bot user' % user)
+    logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
+    logger.info('Files: %s' % files)
 
-    if key.endswith('started'):
-        tw.requested_trigger(branch, rev, builder)
-
-    if status in (1, 2): # Failures according to buildbot.
-        tw.failure_trigger(branch, rev, builder)
+    tw.handle_message(key, branch, rev, builder, status, comments,
+                      files)
 
 
 def read_pulse_auth():
@@ -302,6 +322,7 @@ def run():
     ldap_auth = read_ldap_auth()
     tw = TryWatcher(ldap_auth)
     user, pw = read_pulse_auth()
+    get_users()
     consumer = consumers.BuildConsumer(applabel=service_name,
                                        user=user,
                                        password=pw)

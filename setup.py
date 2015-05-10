@@ -9,6 +9,8 @@ PACKAGE_VERSION = '0.1'
 deps = [
     'mozillapulse',
     'mozlog',
+    'mock',
+    'requests',
 ]
 
 setup(name='trigger-bot',
