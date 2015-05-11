@@ -18,8 +18,6 @@ from mozlog.structured import commandline, get_default_logger
 
 
 logger = get_default_logger()
-# Never trigger jobs managed by autoland.
-autoland_user = 'bind-autoland@mozilla.com'
 conf_path = '../scratch/conf.json'
 triggerbot_users = []
 def trigger_bot_user(m):
@@ -40,6 +38,7 @@ class TryWatcher(object):
     # This is... also quite arbitrary. See the comment below about pruning
     # old revisions.
     revmap_threshold = 2000
+    requested_limit = 20
 
     def __init__(self, ldap_auth):
         self.revmap = defaultdict(dict)
@@ -49,7 +48,6 @@ class TryWatcher(object):
 
     def known_rev(self, branch, rev):
         return rev in self.revmap
-
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow
@@ -168,7 +166,9 @@ class TryWatcher(object):
         parser = argparse.ArgumentParser()
         parser.add_argument('--rebuild', type=int, default=0)
         (args, _) = parser.parse_known_args(all_try_args)
-        return args.rebuild
+
+        limit = TryWatcher.requested_limit
+        return args.rebuild if args.rebuild < limit else limit
 
 
     def handle_message(self, key, branch, rev, builder, status,
@@ -189,6 +189,10 @@ class TryWatcher(object):
 
 
     def trigger_n_times(self, branch, rev, builder, count):
+
+        if not re.match("[a-z0-9]{12,40}", rev):
+            logger.error("%s doesn't look like a valid revision, can't trigger it")
+            return
 
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
         tmpl = '%s/%s/builders/%s/%s'
