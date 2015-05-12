@@ -336,5 +336,9 @@ def run():
     while True:
         try:
             consumer.listen()
+        except KeyboardInterrupt:
+            raise
         except IOError:
             pass
+        except:
+            logger.error("Received an unexpected exception", exc_info=True)
