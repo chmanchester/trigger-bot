@@ -10,13 +10,8 @@ from mozlog.structured import commandline
 from collections import defaultdict
 
 
-commandline.setup_logging('test_triggerbot',
-                          {},
-                          {
-                              'mach': sys.stdout,
-                          })
 
-from triggerbot import try_watcher
+from triggerbot.tree_watcher import TreeWatcher
 
 
 class with_sequence(object):
@@ -56,8 +51,6 @@ limit_sequence = [
     ('finished', 'try', 1, 'b4', 1, ''),
     ('started', 'try', 1, 'b5', None, 'try: -b o -p linux -u xpcshell -t none'),
     ('finished', 'try', 1, 'b5', 1, ''),
-    ('started', 'try', 1, 'b6', None, 'try: -b o -p linux -u xpcshell -t none'),
-    ('finished', 'try', 1, 'b6', 1, ''),
 ]
 
 no_trigger_sequence = [
@@ -104,11 +97,17 @@ class TestTriggerBot(unittest.TestCase):
         self.assertEqual(actual, count)
 
     def setUp(self):
-        try_watcher.TryWatcher.revmap_threshold = 9
+        TreeWatcher.revmap_threshold = 9
+
+
+        commandline.setup_logging('test_triggerbot', {},
+                                  {
+                                      'mach': sys.stdout,
+                                  })
 
         self.triggers = defaultdict(int)
-        self.tw = try_watcher.TryWatcher(('', ''))
-        self.tw.trigger_limit = 4
+        self.tw = TreeWatcher(('', ''))
+        self.tw.trigger_limit = 6
         self.tw.auth = None
 
         def record_trigger(branch, rev, builder, count):
@@ -122,8 +121,9 @@ class TestTriggerBot(unittest.TestCase):
         # will result in no retriggers.
         # We set the limit to 6 above, so we should have tried
         # to trigger but failed the two last times.
-        self.assertEqual(4, sum(self.triggers.values()))
-        self.assert_triggers('try', 1, 'b4', 1)
+        self.assertEqual(6, sum(self.triggers.values()))
+        self.assert_triggers('try', 1, 'b3', TreeWatcher.default_retry)
+        self.assert_triggers('try', 1, 'b4', 0)
         self.assert_triggers('try', 1, 'b5', 0)
         self.assert_triggers('try', 1, 'b6', 0)
 
@@ -142,7 +142,7 @@ class TestTriggerBot(unittest.TestCase):
     @with_sequence(failure_sequence)
     def test_failure_triggers(self):
         # Test that a failing job results in retriggers.
-        self.assert_triggers('try', 1, 'b1', 1)
+        self.assert_triggers('try', 1, 'b1', TreeWatcher.default_retry)
 
     @with_sequence(revmap_limit_sequence)
     def test_prune_revmap(self):

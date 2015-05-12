@@ -33,5 +33,5 @@ setup(name='trigger-bot',
       install_requires=deps,
       entry_points="""
         [console_scripts]
-        run-trigger-bot = triggerbot.try_watcher:run
+        run-trigger-bot = triggerbot.triggerbot_pulse:run
       """)

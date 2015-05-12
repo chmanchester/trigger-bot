@@ -5,35 +5,31 @@
 import argparse
 import json
 import re
-import sys
 import time
-import threading
 import requests
 
 from collections import defaultdict
 
-
-from mozillapulse import consumers
-from mozlog.structured import commandline, get_default_logger
+from mozlog.structured import get_default_logger
 
 
-logger = get_default_logger()
-conf_path = '../scratch/conf.json'
-triggerbot_users = []
-def trigger_bot_user(m):
-    return m in triggerbot_users
-tw = None
+class TreeWatcher(object):
+    """Class to keep track of test jobs starting and finishing, known
+    revisions and builders, and re-trigger jobs in either when a job
+    fails or a when requested by a user.
 
-
-class TryWatcher(object):
-    """Class to keep track of the triggers we've already done and
-    those yet to do for a particular rev/tree.
+    Redundant triggers are prevented by keeping track of each buildername,
+    tree, revision we've already triggered. The invariant is that for
+    any (buildername, tree, revision) combination, we will only issue triggers
+    once. Old revisions are purged after a certain interval, so care must
+    be taken that enough revisions are stored at a time to prevent issuing
+    redundant triggers.
     """
     # Don't trigger more than this many jobs for a rev.
     # Arbitrary limit: if orange factor is around 6, and we re-trigger
     # for each orange, we shouldn't need to trigger much more than that for
     # any push that would be suitable to land.
-    default_retry = 1
+    default_retry = 2
     per_push_failures = 6
     # This is... also quite arbitrary. See the comment below about pruning
     # old revisions.
@@ -42,12 +38,10 @@ class TryWatcher(object):
 
     def __init__(self, ldap_auth):
         self.revmap = defaultdict(dict)
-        self.revmap_threshold = TryWatcher.revmap_threshold
+        self.revmap_threshold = TreeWatcher.revmap_threshold
         self.auth = ldap_auth
-        self.trigger_limit = TryWatcher.default_retry * TryWatcher.per_push_failures
-
-    def known_rev(self, branch, rev):
-        return rev in self.revmap
+        self.trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
+        self.log = get_default_logger('tree_watcher')
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow
@@ -56,9 +50,9 @@ class TryWatcher(object):
         # as an incoming revision and the next time it's finished and potentially
         # failed, but it could be pending for a while so we don't know how long that
         # will be.
-        target_count = int(TryWatcher.revmap_threshold * 2/3)
+        target_count = int(TreeWatcher.revmap_threshold * 2/3)
         prune_count = len(self.revmap.keys()) - target_count
-        logger.info('Pruning %d entries from the revmap' % prune_count)
+        self.log.info('Pruning %d entries from the revmap' % prune_count)
 
         # Could/should use an LRU cache here, but assuming any job will go
         # from pending to complete in 24 hrs and we have up to 528 pushes a
@@ -66,26 +60,30 @@ class TryWatcher(object):
         # entries to sort.
         for rev, data in sorted(self.revmap.items(), key=lambda (k, v): v['time_seen']):
             if not prune_count:
-                logger.info('Finished pruning, oldest rev is now: %s' %
+                self.log.info('Finished pruning, oldest rev is now: %s' %
                             rev)
                 return
 
             del self.revmap[rev]
             prune_count -= 1
 
+    def known_rev(self, branch, rev):
+        return rev in self.revmap
 
     def failure_trigger(self, branch, rev, builder):
-        logger.info('Found a failure for %s and may retrigger' % rev)
+        self.log.info('Found a failure for %s and may retrigger' % rev)
 
         if rev in self.revmap:
 
             if 'fail_retrigger' not in self.revmap[rev]:
+                self.log.info('Found no request to retrigger %s on failure' %
+                            rev)
                 return
 
             seen_builders = self.revmap[rev]['seen_builders']
 
             if builder in seen_builders:
-                logger.info('We\'ve already triggered "%s" at %s and don\'t'
+                self.log.info('We\'ve already triggered "%s" at %s and don\'t'
                             ' need to do it again' % (builder, rev))
                 return
 
@@ -94,30 +92,30 @@ class TryWatcher(object):
             seen = self.revmap[rev]['rev_trigger_count']
 
             if seen >= self.trigger_limit:
-                logger.info('Would have triggered "%s" at %s but there are already '
-                            'too many failures.' % (builder, rev))
+                self.log.warning('Would have triggered "%s" at %s but there are already '
+                               'too many failures.' % (builder, rev))
                 return
 
             self.revmap[rev]['rev_trigger_count'] += count
             self.trigger_n_times(branch, rev, builder, count)
-            logger.warning('Triggering %d of "%s" at %s' % (count, builder, rev))
-            logger.warning('Already triggered %d for %s' % (seen, rev))
+            self.log.warning('Triggering %d of "%s" at %s' % (count, builder, rev))
+            self.log.warning('Already triggered %d for %s' % (seen, rev))
 
 
     def requested_trigger(self, branch, rev, builder):
         if rev in self.revmap and 'requested_trigger' in self.revmap[rev]:
 
-            logger.info('Found a request to trigger %s and may retrigger' % rev)
+            self.log.info('Found a request to trigger %s and may retrigger' % rev)
             seen_builders = self.revmap[rev]['seen_builders']
 
             if builder in seen_builders:
-                logger.info('We already triggered "%s" at %s don\'t need'
+                self.log.info('We already triggered "%s" at %s don\'t need'
                             ' to do it again' % (builder, rev))
                 return
 
             seen_builders.add(builder)
             count = self.revmap[rev]['requested_trigger']
-            logger.info('Triggering %d requested jobs for "%s" at %s' %
+            self.log.info('Triggering %d requested jobs for "%s" at %s' %
                         (count, builder, rev))
             self.trigger_n_times(branch, rev, builder, count)
 
@@ -127,15 +125,16 @@ class TryWatcher(object):
         req_count = self.trigger_count_from_msg(comments)
 
         if req_count:
-            logger.info('Added %d triggers for %s' % (req_count, rev))
+            self.log.info('Added %d triggers for %s' % (req_count, rev))
             self.revmap[rev]['requested_trigger'] = req_count
         else:
-            logger.info('Adding default failure retries for %s' % rev)
-            self.revmap[rev]['fail_retrigger'] = TryWatcher.default_retry
+            self.log.info('Adding default failure retries for %s' % rev)
+            self.revmap[rev]['fail_retrigger'] = TreeWatcher.default_retry
 
         self.revmap[rev]['rev_trigger_count'] = 0
         self.revmap[rev]['comments'] = comments
         self.revmap[rev]['files'] = files
+
         # When we need to purge old revisions, we need to purge the
         # oldest first.
         self.revmap[rev]['time_seen'] = time.time()
@@ -167,7 +166,7 @@ class TryWatcher(object):
         parser.add_argument('--rebuild', type=int, default=0)
         (args, _) = parser.parse_known_args(all_try_args)
 
-        limit = TryWatcher.requested_limit
+        limit = TreeWatcher.requested_limit
         return args.rebuild if args.rebuild < limit else limit
 
 
@@ -189,27 +188,25 @@ class TryWatcher(object):
 
 
     def trigger_n_times(self, branch, rev, builder, count):
-
         if not re.match("[a-z0-9]{12,40}", rev):
-            logger.error("%s doesn't look like a valid revision, can't trigger it")
+            self.log.error("%s doesn't look like a valid revision, can't trigger it")
             return
 
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
         tmpl = '%s/%s/builders/%s/%s'
 
         trigger_url = tmpl % (root_url, branch, builder, rev)
-        logger.info('Triggering url: %s' % trigger_url)
+        self.log.info('Triggering url: %s' % trigger_url)
 
         payload = {
             'branch': branch,
             'revision': rev,
-            # Why do we need to double quote these fields?
             'files': json.dumps(self.revmap[rev]['files']),
             'properties': json.dumps({
                 'try_syntax': self.revmap[rev]['comments'],
             }),
         }
-        logger.debug('Triggering payload:\n\t%s' % payload)
+        self.log.debug('Triggering payload:\n\t%s' % payload)
 
         for i in range(count):
             req = requests.post(
@@ -218,127 +215,4 @@ class TryWatcher(object):
                 data=payload,
                 auth=self.auth
             )
-            logger.info('Requested job, return: %s' % req.status_code)
-
-        import pdb; pdb.set_trace()
-
-
-def extract_payload(payload, key):
-
-    branch = None
-    rev = None
-    builder = None
-    build_data = payload['build']
-
-    for prop in build_data['properties']:
-        if prop[0] == 'revision':
-            rev = prop[1]
-        if prop[0] == 'buildername':
-            builder = prop[1]
-        if prop[0] == 'branch':
-            branch = prop[1]
-
-    status = build_data['results']
-    files = []
-    comments = None
-    user = None
-
-    if 'sourceStamp' in build_data and len(build_data['sourceStamp'].get('changes')):
-        change = build_data['sourceStamp']['changes'][-1]
-        if 'files' in change:
-            for f in change['files']:
-                if 'name' in f and f['name']:
-                    files.append(f['name'])
-        if 'comments' in change and 'try:' in change['comments']:
-            comments = change['comments']
-        if 'who' in change:
-            user = change['who']
-
-    # See if this is a unit test (borrowed from the pulsetranslator).
-    # Pretty terrible, but test start is necessary (and ignored by
-    # the normalized build exchange).
-    unittest_re = re.compile(r'build\.((%s)[-|_](.*?)(-debug|-o-debug|-pgo|_pgo|_test)?[-|_](test|unittest|pgo)-(.*?))\.(\d+)\.(started|finished)' %
-                             branch)
-    match = unittest_re.match(key)
-
-    return (branch, rev, builder, status,
-            match is not None, files, comments, user)
-
-
-def handle_message(data, message):
-
-    message.ack()
-    key = data['_meta']['routing_key']
-    (branch, rev, builder, status,
-     is_test, files, comments, user) = extract_payload(data['payload'], key)
-
-
-    logger.info('%s %s' % (user, key))
-
-    if not all([branch == 'try',
-                is_test,
-                trigger_bot_user(user)]):
-        return
-
-    logger.info('%s is a trigger bot user' % user)
-    logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
-    logger.info('Files: %s' % files)
-
-    tw.handle_message(key, branch, rev, builder, status, comments,
-                      files)
-
-
-def read_pulse_auth():
-
-    with open(conf_path) as f:
-        conf = json.load(f)
-        return conf['pulse_user'], conf['pulse_pw']
-
-
-def read_ldap_auth():
-
-    with open(conf_path) as f:
-        conf = json.load(f)
-        return conf['ldap_user'], conf['ldap_pw']
-
-def get_users():
-    global triggerbot_users
-    with open(conf_path) as f:
-        conf = json.load(f)
-        triggerbot_users = conf['triggerbot_users']
-
-
-def run():
-
-    global logger
-    global tw
-
-    parser = argparse.ArgumentParser()
-    commandline.add_logging_group(parser)
-    args = parser.parse_args(sys.argv[1:])
-    service_name = 'mozci-trigger-bot'
-    logger = commandline.setup_logging(service_name,
-                                       args,
-                                       {
-                                           'mach': sys.stdout,
-                                       })
-    logger.info('starting listener')
-    ldap_auth = read_ldap_auth()
-    tw = TryWatcher(ldap_auth)
-    user, pw = read_pulse_auth()
-    get_users()
-    consumer = consumers.BuildConsumer(applabel=service_name,
-                                       user=user,
-                                       password=pw)
-    consumer.configure(topic=['build.#.started', 'build.#.finished'],
-                       callback=handle_message)
-
-    while True:
-        try:
-            consumer.listen()
-        except KeyboardInterrupt:
-            raise
-        except IOError:
-            pass
-        except:
-            logger.error("Received an unexpected exception", exc_info=True)
+            self.log.info('Requested job, return: %s' % req.status_code)
