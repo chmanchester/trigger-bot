@@ -2,13 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import logging
 import sys
 import unittest
 
 from mock import Mock
-from mozlog.structured import commandline
 from collections import defaultdict
-
 
 
 from triggerbot.tree_watcher import TreeWatcher
@@ -98,12 +97,6 @@ class TestTriggerBot(unittest.TestCase):
 
     def setUp(self):
         TreeWatcher.revmap_threshold = 9
-
-
-        commandline.setup_logging('test_triggerbot', {},
-                                  {
-                                      'mach': sys.stdout,
-                                  })
 
         self.triggers = defaultdict(int)
         self.tw = TreeWatcher(('', ''))

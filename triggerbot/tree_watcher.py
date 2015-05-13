@@ -4,13 +4,12 @@
 
 import argparse
 import json
+import logging
 import re
 import time
 import requests
 
 from collections import defaultdict
-
-from mozlog.structured import get_default_logger
 
 
 class TreeWatcher(object):
@@ -41,7 +40,7 @@ class TreeWatcher(object):
         self.revmap_threshold = TreeWatcher.revmap_threshold
         self.auth = ldap_auth
         self.trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
-        self.log = get_default_logger('tree_watcher')
+        self.log = logging.getLogger('trigger-bot')
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow

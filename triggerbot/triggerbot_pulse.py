@@ -4,11 +4,12 @@
 
 import argparse
 import json
+import logging
+import os
 import re
 import sys
 
 from mozillapulse import consumers
-from mozlog.structured import commandline
 
 from .tree_watcher import TreeWatcher
 
@@ -70,7 +71,7 @@ def handle_message(data, message):
      is_test, files, comments, user) = extract_payload(data['payload'], key)
 
 
-    logger.info('%s %s' % (user, key))
+    logger.info('%s - %s' % (key, user))
 
     if not all([branch == 'try',
                 is_test,
@@ -101,6 +102,29 @@ def get_users():
         conf = json.load(f)
         triggerbot_users = conf['triggerbot_users']
 
+def setup_logging(name, log_dir, log_stderr):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+
+    if log_dir:
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
+
+        filename = os.path.join(log_dir, name)
+
+        handler = logging.handlers.RotatingFileHandler(
+            filename, mode='a+', maxBytes=1000000, backupCount=3)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    if log_stderr:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    return logger
 
 def run():
 
@@ -108,14 +132,12 @@ def run():
     global tw
 
     parser = argparse.ArgumentParser()
-    commandline.add_logging_group(parser)
+    parser.add_argument('--log-dir')
+    parser.add_argument('--no-log-stderr', dest='log_stderr',
+                        action='store_false', default=True)
     args = parser.parse_args(sys.argv[1:])
     service_name = 'trigger-bot'
-    logger = commandline.setup_logging(service_name,
-                                       args,
-                                       {
-                                           'mach': sys.stdout,
-                                       })
+    logger = setup_logging(service_name, args.log_dir, args.log_stderr)
     logger.info('starting listener')
     ldap_auth = read_ldap_auth()
     tw = TreeWatcher(ldap_auth)
@@ -135,4 +157,4 @@ def run():
         except IOError:
             pass
         except:
-            logger.error("Received an unexpected exception", exc_info=True)
+            logger.exception("Received an unexpected exception")
