@@ -217,7 +217,6 @@ class TreeWatcher(object):
             }),
         }
         self.log.debug('Triggering payload:\n\t%s' % payload)
-        import pdb; pdb.set_trace()
 
         for i in range(count):
             req = requests.post(
