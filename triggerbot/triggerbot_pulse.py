@@ -112,8 +112,7 @@ def get_users():
 def setup_logging(name, log_dir, log_stderr):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter("%(levelname)s: %(message)s")
 
     if log_dir:
         if not os.path.exists(log_dir):
