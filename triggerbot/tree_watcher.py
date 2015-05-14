@@ -43,6 +43,7 @@ class TreeWatcher(object):
         self.trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
         self.log = logging.getLogger('trigger-bot')
         self.is_triggerbot_user = is_triggerbot_user
+        self.global_trigger_count = 0
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow
@@ -202,6 +203,12 @@ class TreeWatcher(object):
             self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
             return
 
+        if self.global_trigger_count > 25:
+            self.log.warning('Would have triggered "%s" at %s %d times.' %
+                             (builder, rev, count))
+            self.log.warning('But there have been too many global triggers already.')
+            return
+
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
         tmpl = '%s/%s/builders/%s/%s'
 
@@ -226,3 +233,6 @@ class TreeWatcher(object):
                 auth=self.auth
             )
             self.log.info('Requested job, return: %s' % req.status_code)
+
+        self.global_trigger_count += count
+        self.log.warning('%d triggers have been performed by this service.')
