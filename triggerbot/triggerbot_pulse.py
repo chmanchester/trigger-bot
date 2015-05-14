@@ -16,7 +16,7 @@ from .tree_watcher import TreeWatcher
 logger = None
 CONF_PATH = '../scratch/conf.json'
 triggerbot_users = []
-def trigger_bot_user(m):
+def is_triggerbot_user(m):
     return m in triggerbot_users
 tw = None
 
@@ -35,6 +35,9 @@ def extract_payload(payload, key):
             builder = prop[1]
         if prop[0] == 'branch':
             branch = prop[1]
+
+    if rev and len(rev) > 12:
+        rev = rev[:12]
 
     status = build_data['results']
     files = []
@@ -74,30 +77,34 @@ def handle_message(data, message):
     logger.info('%s - %s' % (key, user))
 
     if not all([branch == 'try',
-                is_test,
-                trigger_bot_user(user)]):
+                is_test]):
         return
 
-    logger.info('%s is a trigger bot user' % user)
     logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
-    logger.info('Files: %s' % files)
 
     tw.handle_message(key, branch, rev, builder, status, comments,
-                      files)
+                      files, user)
 
 
 def read_pulse_auth():
+    if os.environ.get('TB_PULSE_USERNAME') and os.environ.get('TB_PULSE_PW'):
+        return os.environ['TB_PULSE_USERNAME'], os.environ['TB_PULSE_PW']
     with open(CONF_PATH) as f:
         conf = json.load(f)
         return conf['pulse_user'], conf['pulse_pw']
 
 def read_ldap_auth():
+    if os.environ.get('TB_LDAP_USERNAME') and os.environ.get('TB_LDAP_PW'):
+        return os.environ['TB_LDAP_USERNAME'], os.environ['TB_LDAP_PW']
     with open(CONF_PATH) as f:
         conf = json.load(f)
         return conf['ldap_user'], conf['ldap_pw']
 
 def get_users():
     global triggerbot_users
+    if os.environ.get('TB_USERS'):
+        triggerbot_users = os.environ['TB_USERS'].split()
+        return
     with open(CONF_PATH) as f:
         conf = json.load(f)
         triggerbot_users = conf['triggerbot_users']
@@ -130,6 +137,7 @@ def run():
 
     global logger
     global tw
+    global is_triggerbot_user
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--log-dir')
@@ -139,10 +147,14 @@ def run():
     service_name = 'trigger-bot'
     logger = setup_logging(service_name, args.log_dir, args.log_stderr)
     logger.info('starting listener')
+
     ldap_auth = read_ldap_auth()
-    tw = TreeWatcher(ldap_auth)
+
     user, pw = read_pulse_auth()
     get_users()
+
+    tw = TreeWatcher(ldap_auth, is_triggerbot_user)
+
     consumer = consumers.BuildConsumer(applabel=service_name,
                                        user=user,
                                        password=pw)

@@ -1,0 +1,1 @@
+worker: run-trigger-bot

@@ -25,22 +25,24 @@ class TreeWatcher(object):
     redundant triggers.
     """
     # Don't trigger more than this many jobs for a rev.
-    # Arbitrary limit: if orange factor is around 6, and we re-trigger
+    # Arbitrary limit: if orange factor is around 5, and we re-trigger
     # for each orange, we shouldn't need to trigger much more than that for
     # any push that would be suitable to land.
     default_retry = 2
-    per_push_failures = 6
+    per_push_failures = 5
     # This is... also quite arbitrary. See the comment below about pruning
     # old revisions.
     revmap_threshold = 2000
+    # If someone asks for more than 20 rebuilds on a push, only give them 20.
     requested_limit = 20
 
-    def __init__(self, ldap_auth):
+    def __init__(self, ldap_auth, is_triggerbot_user=lambda _: True):
         self.revmap = defaultdict(dict)
         self.revmap_threshold = TreeWatcher.revmap_threshold
         self.auth = ldap_auth
         self.trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
         self.log = logging.getLogger('trigger-bot')
+        self.is_triggerbot_user = is_triggerbot_user
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow
@@ -96,9 +98,9 @@ class TreeWatcher(object):
                 return
 
             self.revmap[rev]['rev_trigger_count'] += count
-            self.trigger_n_times(branch, rev, builder, count)
             self.log.warning('Triggering %d of "%s" at %s' % (count, builder, rev))
             self.log.warning('Already triggered %d for %s' % (seen, rev))
+            self.trigger_n_times(branch, rev, builder, count)
 
 
     def requested_trigger(self, branch, rev, builder):
@@ -114,12 +116,12 @@ class TreeWatcher(object):
 
             seen_builders.add(builder)
             count = self.revmap[rev]['requested_trigger']
-            self.log.info('Triggering %d requested jobs for "%s" at %s' %
+            self.log.info('May trigger %d requested jobs for "%s" at %s' %
                         (count, builder, rev))
             self.trigger_n_times(branch, rev, builder, count)
 
 
-    def add_rev(self, branch, rev, comments, files):
+    def add_rev(self, branch, rev, comments, files, user):
 
         req_count = self.trigger_count_from_msg(comments)
 
@@ -141,6 +143,9 @@ class TreeWatcher(object):
         # Prevent an infinite retrigger loop - if we take a trigger action,
         # ensure we only take it once for a builder on a particular revision.
         self.revmap[rev]['seen_builders'] = set()
+
+        # Filter triggering activity based on users.
+        self.revmap[rev]['user'] = user
 
         if len(self.revmap.keys()) > self.revmap_threshold:
             self._prune_revmap()
@@ -170,11 +175,11 @@ class TreeWatcher(object):
 
 
     def handle_message(self, key, branch, rev, builder, status,
-                       comments, files):
+                       comments, files, user):
         if not self.known_rev(branch, rev) and comments:
             # First time we've seen this revision? Add it to known
             # revs and mark required triggers,
-            self.add_rev(branch, rev, comments, files)
+            self.add_rev(branch, rev, comments, files, user)
 
         if key.endswith('started'):
             # If the job is starting and a user requested unconditional
@@ -187,8 +192,14 @@ class TreeWatcher(object):
 
 
     def trigger_n_times(self, branch, rev, builder, count):
-        if not re.match("[a-z0-9]{12,40}", rev):
+        if not re.match("[a-z0-9]{12}", rev):
             self.log.error("%s doesn't look like a valid revision, can't trigger it")
+            return
+
+        if not self.is_triggerbot_user(self.revmap[rev]['user']):
+            self.log.warning('Would have triggered "%s" at %s %d times.' %
+                             (builder, rev, count))
+            self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
             return
 
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
@@ -206,6 +217,7 @@ class TreeWatcher(object):
             }),
         }
         self.log.debug('Triggering payload:\n\t%s' % payload)
+        import pdb; pdb.set_trace()
 
         for i in range(count):
             req = requests.post(
