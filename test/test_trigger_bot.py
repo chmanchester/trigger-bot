@@ -23,10 +23,8 @@ class with_sequence(object):
         inst = self
         def wrapped(self, *args, **kwargs):
             for key, branch, rev, builder, status, comments in inst._seq:
-                # Note that files are inconsequential when we don't
-                # actually trigger.
                 self.tw.handle_message(key, branch, rev, builder, status,
-                                       comments, [], "")
+                                       comments, "")
             f(self, *args, **kwargs)
 
         return wrapped

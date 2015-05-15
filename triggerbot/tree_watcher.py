@@ -123,7 +123,7 @@ class TreeWatcher(object):
             self.trigger_n_times(branch, rev, builder, count)
 
 
-    def add_rev(self, branch, rev, comments, files, user):
+    def add_rev(self, branch, rev, comments, user):
 
         req_count = self.trigger_count_from_msg(comments)
 
@@ -136,7 +136,6 @@ class TreeWatcher(object):
 
         self.revmap[rev]['rev_trigger_count'] = 0
         self.revmap[rev]['comments'] = comments
-        self.revmap[rev]['files'] = files
 
         # When we need to purge old revisions, we need to purge the
         # oldest first.
@@ -176,12 +175,11 @@ class TreeWatcher(object):
         return args.rebuild if args.rebuild < limit else limit
 
 
-    def handle_message(self, key, branch, rev, builder, status,
-                       comments, files, user):
+    def handle_message(self, key, branch, rev, builder, status, comments, user):
         if not self.known_rev(branch, rev) and comments:
             # First time we've seen this revision? Add it to known
             # revs and mark required triggers,
-            self.add_rev(branch, rev, comments, files, user)
+            self.add_rev(branch, rev, comments, user)
 
         if key.endswith('started'):
             # If the job is starting and a user requested unconditional

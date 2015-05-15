@@ -40,16 +40,11 @@ def extract_payload(payload, key):
         rev = rev[:12]
 
     status = build_data['results']
-    files = []
     comments = None
     user = None
 
     if 'sourceStamp' in build_data and len(build_data['sourceStamp'].get('changes')):
         change = build_data['sourceStamp']['changes'][-1]
-        if 'files' in change:
-            for f in change['files']:
-                if 'name' in f and f['name']:
-                    files.append(f['name'])
         if 'comments' in change and 'try:' in change['comments']:
             comments = change['comments']
         if 'who' in change:
@@ -62,8 +57,7 @@ def extract_payload(payload, key):
                              branch)
     match = unittest_re.match(key)
 
-    return (branch, rev, builder, status,
-            match is not None, files, comments, user)
+    return branch, rev, builder, status, match is not None, comments, user
 
 
 def handle_message(data, message):
@@ -71,7 +65,7 @@ def handle_message(data, message):
     message.ack()
     key = data['_meta']['routing_key']
     (branch, rev, builder, status,
-     is_test, files, comments, user) = extract_payload(data['payload'], key)
+     is_test, comments, user) = extract_payload(data['payload'], key)
 
     logger.info('%s : %s - %s' % (rev, key, user))
 
@@ -81,8 +75,7 @@ def handle_message(data, message):
 
     logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
 
-    tw.handle_message(key, branch, rev, builder, status, comments,
-                      files, user)
+    tw.handle_message(key, branch, rev, builder, status, comments, user)
 
 
 def read_pulse_auth():
