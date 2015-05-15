@@ -201,7 +201,7 @@ class TreeWatcher(object):
             self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
             return
 
-        if self.global_trigger_count > 150:
+        if self.global_trigger_count > 250:
             self.log.warning('Would have triggered "%s" at %s %d times.' %
                              (builder, rev, count))
             self.log.warning('But there have been too many global triggers already.')
