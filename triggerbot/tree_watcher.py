@@ -5,9 +5,10 @@
 import argparse
 import json
 import logging
+import pprint
 import re
-import time
 import requests
+import time
 
 from collections import defaultdict
 
@@ -210,29 +211,48 @@ class TreeWatcher(object):
             return
 
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
-        tmpl = '%s/%s/builders/%s/%s'
 
-        trigger_url = tmpl % (root_url, branch, builder, rev)
-        self.log.info('Triggering url: %s' % trigger_url)
+        # First find the build_id for the job to rebuild
+        build_info_url = '%s/%s/rev/%s?format=json' % (root_url, branch, rev)
+        info_req = requests.get(build_info_url,
+                                headers={'Accept': 'application/json'},
+                                auth=self.auth)
 
+        found_buildid = None
+        for res in info_req.json():
+            if 'build_id' not in res:
+                continue
+            if res['buildername'] == builder:
+                found_buildid = res['build_id']
+                break
+
+        self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
+
+        if found_buildid is None:
+            self.log.error('Could not trigger "%s" at %s because there were '
+                           'no builds found with that buildername to rebuild.' %
+                           (builder, rev))
+
+            return
+
+        build_url = '%s/%s/build' % (root_url, branch)
+        self.log.info('Triggering url: %s' % build_url)
+
+        import pdb; pdb.set_trace()
         payload = {
-            'branch': branch,
-            'revision': rev,
-            'files': json.dumps(self.revmap[rev]['files']),
-            'properties': json.dumps({
-                'try_syntax': self.revmap[rev]['comments'],
-            }),
+            'count': count,
+            'build_id': found_buildid,
         }
+
         self.log.debug('Triggering payload:\n\t%s' % payload)
 
-        for i in range(count):
-            req = requests.post(
-                trigger_url,
-                headers={'Accept': 'application/json'},
-                data=payload,
-                auth=self.auth
-            )
-            self.log.info('Requested job, return: %s' % req.status_code)
+        req = requests.post(
+            build_url,
+            headers={'Accept': 'application/json'},
+            data=payload,
+            auth=self.auth
+        )
+        self.log.info('Requested job, return: %s' % req.status_code)
 
         self.global_trigger_count += count
-        self.log.warning('%d triggers have been performed by this service.')
+        self.log.warning('%d total triggers have been performed by this service.' % self.global_trigger_count)

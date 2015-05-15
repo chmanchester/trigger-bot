@@ -73,8 +73,7 @@ def handle_message(data, message):
     (branch, rev, builder, status,
      is_test, files, comments, user) = extract_payload(data['payload'], key)
 
-
-    logger.info('%s - %s' % (key, user))
+    logger.info('%s : %s - %s' % (rev, key, user))
 
     if not all([branch == 'try',
                 is_test]):
