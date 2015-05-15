@@ -135,7 +135,6 @@ class TreeWatcher(object):
             self.revmap[rev]['fail_retrigger'] = TreeWatcher.default_retry
 
         self.revmap[rev]['rev_trigger_count'] = 0
-        self.revmap[rev]['comments'] = comments
 
         # When we need to purge old revisions, we need to purge the
         # oldest first.
@@ -224,19 +223,16 @@ class TreeWatcher(object):
                 found_buildid = res['build_id']
                 break
 
-        self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
-
         if found_buildid is None:
             self.log.error('Could not trigger "%s" at %s because there were '
                            'no builds found with that buildername to rebuild.' %
                            (builder, rev))
-
+            self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
             return
 
         build_url = '%s/%s/build' % (root_url, branch)
         self.log.info('Triggering url: %s' % build_url)
 
-        import pdb; pdb.set_trace()
         payload = {
             'count': count,
             'build_id': found_buildid,
