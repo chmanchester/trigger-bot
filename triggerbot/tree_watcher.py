@@ -216,28 +216,34 @@ class TreeWatcher(object):
                                 auth=self.auth)
 
         found_buildid = None
+        found_requestid = None
         for res in info_req.json():
-            if 'build_id' not in res:
-                continue
             if res['buildername'] == builder:
-                found_buildid = res['build_id']
-                break
+                if 'build_id' in res:
+                    found_buildid = res['build_id']
+                    break
+                if 'request_id' in res:
+                    found_requestid = res['request_id']
+                    break
 
-        if found_buildid is None:
+        payload = {
+            'count': count,
+        }
+
+        if found_buildid:
+            build_url = '%s/%s/build' % (root_url, branch)
+            payload['build_id'] = found_buildid
+        elif found_requestid:
+            build_url = '%s/%s/request' % (root_url, branch)
+            payload['request_id'] = found_requestid
+        else:
             self.log.error('Could not trigger "%s" at %s because there were '
                            'no builds found with that buildername to rebuild.' %
                            (builder, rev))
             self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
             return
 
-        build_url = '%s/%s/build' % (root_url, branch)
         self.log.info('Triggering url: %s' % build_url)
-
-        payload = {
-            'count': count,
-            'build_id': found_buildid,
-        }
-
         self.log.debug('Triggering payload:\n\t%s' % payload)
 
         req = requests.post(
@@ -249,4 +255,5 @@ class TreeWatcher(object):
         self.log.info('Requested job, return: %s' % req.status_code)
 
         self.global_trigger_count += count
-        self.log.warning('%d total triggers have been performed by this service.' % self.global_trigger_count)
+        self.log.warning('%d total triggers have been performed by this service.' %
+                         self.global_trigger_count)
