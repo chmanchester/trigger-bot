@@ -10,6 +10,7 @@ import re
 import requests
 import time
 
+from threading import Timer
 from collections import defaultdict
 
 
@@ -190,7 +191,7 @@ class TreeWatcher(object):
             self.failure_trigger(branch, rev, builder)
 
 
-    def trigger_n_times(self, branch, rev, builder, count):
+    def trigger_n_times(self, branch, rev, builder, count, attempt=0):
         if not re.match("[a-z0-9]{12}", rev):
             self.log.error("%s doesn't look like a valid revision, can't trigger it")
             return
@@ -207,6 +208,46 @@ class TreeWatcher(object):
             self.log.warning('But there have been too many global triggers already.')
             return
 
+        self.log.info('trigger_n_times, attempt %d' % attempt)
+
+        root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
+
+        payload = {
+            'count': count,
+        }
+
+        found_buildid, found_requestid = self._get_ids_for_rev(branch, rev, builder)
+        if found_buildid:
+            build_url = '%s/%s/build' % (root_url, branch)
+            payload['build_id'] = found_buildid
+        elif found_requestid:
+            build_url = '%s/%s/request' % (root_url, branch)
+            payload['request_id'] = found_requestid
+        else:
+            # For a short time after a job starts it seems there might not be
+            # any info associated with this job/builder in.
+            self.log.warning('Could not trigger "%s" at %s because there were '
+                             'no builds found with that buildername to rebuild.' %
+                             (builder, rev))
+            if attempt > 4:
+                self.log.warning('Already tried to find something to rebuild '
+                                 'for "%s" at %s, giving up' % (builder, rev))
+                return
+            self.log.warning('Will re-attempt')
+            tm = Timer(90, self.trigger_n_times,
+                       args=[branch, rev, builder, count, attempt + 1])
+            tm.start()
+            return
+
+        self._rebuild(build_url, payload)
+        self.global_trigger_count += count
+        self.log.warning('%d total triggers have been performed by this service.' %
+                         self.global_trigger_count)
+
+
+    def _get_ids_for_rev(self, branch, rev, builder):
+        # Get the request or build id associated with the given branch/rev/builder,
+        # if any.
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
 
         # First find the build_id for the job to rebuild
@@ -214,7 +255,6 @@ class TreeWatcher(object):
         info_req = requests.get(build_info_url,
                                 headers={'Accept': 'application/json'},
                                 auth=self.auth)
-
         found_buildid = None
         found_requestid = None
         for res in info_req.json():
@@ -226,26 +266,15 @@ class TreeWatcher(object):
                     found_requestid = res['request_id']
                     break
 
-        payload = {
-            'count': count,
-        }
-
-        if found_buildid:
-            build_url = '%s/%s/build' % (root_url, branch)
-            payload['build_id'] = found_buildid
-        elif found_requestid:
-            build_url = '%s/%s/request' % (root_url, branch)
-            payload['request_id'] = found_requestid
-        else:
-            self.log.error('Could not trigger "%s" at %s because there were '
-                           'no builds found with that buildername to rebuild.' %
-                           (builder, rev))
+        if not (found_buildid or found_requestid):
             self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
-            return
 
+        return found_buildid, found_requestid
+
+    def _rebuild(self, build_url, payload):
+        # Actually do the triggering for a url and payload and keep track of the result.
         self.log.info('Triggering url: %s' % build_url)
         self.log.debug('Triggering payload:\n\t%s' % payload)
-
         req = requests.post(
             build_url,
             headers={'Accept': 'application/json'},
@@ -254,6 +283,3 @@ class TreeWatcher(object):
         )
         self.log.info('Requested job, return: %s' % req.status_code)
 
-        self.global_trigger_count += count
-        self.log.warning('%d total triggers have been performed by this service.' %
-                         self.global_trigger_count)
