@@ -216,7 +216,13 @@ class TreeWatcher(object):
             'count': count,
         }
 
-        found_buildid, found_requestid = self._get_ids_for_rev(branch, rev, builder)
+        found_buildid, found_requestid, seen = self._get_ids_for_rev(branch, rev, builder)
+        if seen > count:
+            self.log.warning('Would have triggered %d of "%s" at %s, but we\'ve already'
+                             ' found more requests than that for this builder/rev.' %
+                             (count, builder, rev))
+            return
+
         if found_buildid:
             build_url = '%s/%s/build' % (root_url, branch)
             payload['build_id'] = found_buildid
@@ -257,19 +263,19 @@ class TreeWatcher(object):
                                 auth=self.auth)
         found_buildid = None
         found_requestid = None
+        count = 0
         for res in info_req.json():
             if res['buildername'] == builder:
-                if 'build_id' in res:
+                count += 1
+                if 'build_id' in res and not found_buildid:
                     found_buildid = res['build_id']
-                    break
-                if 'request_id' in res:
+                if 'request_id' in res and not found_requestid:
                     found_requestid = res['request_id']
-                    break
 
         if not (found_buildid or found_requestid):
             self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
 
-        return found_buildid, found_requestid
+        return found_buildid, found_requestid, count
 
     def _rebuild(self, build_url, payload):
         # Actually do the triggering for a url and payload and keep track of the result.
