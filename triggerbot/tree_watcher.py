@@ -193,19 +193,14 @@ class TreeWatcher(object):
 
     def trigger_n_times(self, branch, rev, builder, count, attempt=0):
         if not re.match("[a-z0-9]{12}", rev):
-            self.log.error("%s doesn't look like a valid revision, can't trigger it")
+            self.log.error("%s doesn't look like a valid revision, can't trigger it" %
+                           rev)
             return
 
         if not self.is_triggerbot_user(self.revmap[rev]['user']):
             self.log.warning('Would have triggered "%s" at %s %d times.' %
                              (builder, rev, count))
             self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
-            return
-
-        if self.global_trigger_count > 250:
-            self.log.warning('Would have triggered "%s" at %s %d times.' %
-                             (builder, rev, count))
-            self.log.warning('But there have been too many global triggers already.')
             return
 
         self.log.info('trigger_n_times, attempt %d' % attempt)
