@@ -27,11 +27,11 @@ class TreeWatcher(object):
     redundant triggers.
     """
     # Don't trigger more than this many jobs for a rev.
-    # Arbitrary limit: if orange factor is around 5, and we re-trigger
-    # for each orange, we shouldn't need to trigger much more than that for
-    # any push that would be suitable to land.
+    # Arbitrary limit: if we re-trigger for each orange and per-push
+    # orange factor is approximately fixed, we shouldn't need to trigger
+    # much more than that for any push that would be suitable to land.
     default_retry = 2
-    per_push_failures = 5
+    per_push_failures = 7
     # This is... also quite arbitrary. See the comment below about pruning
     # old revisions.
     revmap_threshold = 2000
@@ -128,6 +128,7 @@ class TreeWatcher(object):
 
         req_count = self.trigger_count_from_msg(comments)
 
+        # Only trigger based on a request or a failure, not both.
         if req_count:
             self.log.info('Added %d triggers for %s' % (req_count, rev))
             self.revmap[rev]['requested_trigger'] = req_count
