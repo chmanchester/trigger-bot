@@ -198,6 +198,10 @@ class TreeWatcher(object):
                            rev)
             return
 
+        self.global_trigger_count += count
+        self.log.warning('Up to %d total triggers have been performed by this service.' %
+                         self.global_trigger_count)
+
         if not self.is_triggerbot_user(self.revmap[rev]['user']):
             self.log.warning('Would have triggered "%s" at %s %d times.' %
                              (builder, rev, count))
@@ -242,9 +246,6 @@ class TreeWatcher(object):
             return
 
         self._rebuild(build_url, payload)
-        self.global_trigger_count += count
-        self.log.warning('%d total triggers have been performed by this service.' %
-                         self.global_trigger_count)
 
 
     def _get_ids_for_rev(self, branch, rev, builder):
