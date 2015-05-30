@@ -26,14 +26,17 @@ class TreeWatcher(object):
     be taken that enough revisions are stored at a time to prevent issuing
     redundant triggers.
     """
-    # Don't trigger more than this many jobs for a rev.
-    # Arbitrary limit: if we re-trigger for each orange and per-push
-    # orange factor is approximately fixed, we shouldn't need to trigger
+    # Allow at least this many failures for a revision.
+    # If we re-trigger for each orange and per-push orange
+    # factor is approximately fixed, we shouldn't need to trigger
     # much more than that for any push that would be suitable to land.
     default_retry = 2
     per_push_failures = 5
-    # This is... also quite arbitrary. See the comment below about pruning
-    # old revisions.
+    # We may trigger more than this as long as the total is below this
+    # proportion of all builds for a push (5% of jobs for now).
+    failure_tolerance_factor = 20
+
+    # See the comment below about pruning old revisions.
     revmap_threshold = 2000
     # If someone asks for more than 20 rebuilds on a push, only give them 20.
     requested_limit = 20
@@ -42,7 +45,7 @@ class TreeWatcher(object):
         self.revmap = defaultdict(dict)
         self.revmap_threshold = TreeWatcher.revmap_threshold
         self.auth = ldap_auth
-        self.trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
+        self.lower_trigger_limit = TreeWatcher.default_retry * TreeWatcher.per_push_failures
         self.log = logging.getLogger('trigger-bot')
         self.is_triggerbot_user = is_triggerbot_user
         self.global_trigger_count = 0
@@ -80,30 +83,28 @@ class TreeWatcher(object):
         if rev in self.revmap:
 
             if 'fail_retrigger' not in self.revmap[rev]:
-                self.log.info('Found no request to retrigger %s on failure' %
-                            rev)
+                self.log.error('Found no request to retrigger %s on failure' %
+                               rev)
                 return
 
             seen_builders = self.revmap[rev]['seen_builders']
 
             if builder in seen_builders:
                 self.log.info('We\'ve already triggered "%s" at %s and don\'t'
-                            ' need to do it again' % (builder, rev))
+                              ' need to do it again' % (builder, rev))
                 return
 
             seen_builders.add(builder)
+
             count = self.revmap[rev]['fail_retrigger']
             seen = self.revmap[rev]['rev_trigger_count']
 
-            if seen >= self.trigger_limit:
-                self.log.warning('Would have triggered "%s" at %s but there are already '
-                               'too many failures.' % (builder, rev))
-                return
-
-            self.revmap[rev]['rev_trigger_count'] += count
             self.log.warning('Triggering %d of "%s" at %s' % (count, builder, rev))
             self.log.warning('Already triggered %d for %s' % (seen, rev))
-            self.trigger_n_times(branch, rev, builder, count)
+
+            triggered = self.attempt_triggers(branch, rev, builder, count, seen)
+            if triggered:
+                self.revmap[rev]['rev_trigger_count'] += triggered
 
 
     def requested_trigger(self, branch, rev, builder):
@@ -121,7 +122,7 @@ class TreeWatcher(object):
             count = self.revmap[rev]['requested_trigger']
             self.log.info('May trigger %d requested jobs for "%s" at %s' %
                         (count, builder, rev))
-            self.trigger_n_times(branch, rev, builder, count)
+            self.attempt_triggers(branch, rev, builder, count)
 
 
     def add_rev(self, branch, rev, comments, user):
@@ -192,9 +193,9 @@ class TreeWatcher(object):
             self.failure_trigger(branch, rev, builder)
 
 
-    def trigger_n_times(self, branch, rev, builder, count, attempt=0):
-        if not re.match("[a-z0-9]{12}", rev):
-            self.log.error("%s doesn't look like a valid revision, can't trigger it" %
+    def attempt_triggers(self, branch, rev, builder, count, seen, attempt=0):
+        if not re.match('[a-z0-9]{12}', rev):
+            self.log.error('%s doesn\'t look like a valid revision, can\'t trigger it' %
                            rev)
             return
 
@@ -208,20 +209,28 @@ class TreeWatcher(object):
             self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
             return
 
-        self.log.info('trigger_n_times, attempt %d' % attempt)
+        self.log.info('attempt_triggers, attempt %d' % attempt)
 
-        root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
 
-        payload = {
-            'count': count,
-        }
+        found_buildid, found_requestid, builder_total, rev_total = self._get_ids_for_rev(branch, rev, builder)
 
-        found_buildid, found_requestid, seen = self._get_ids_for_rev(branch, rev, builder)
-        if seen > count:
+        if builder_total > count:
             self.log.warning('Would have triggered %d of "%s" at %s, but we\'ve already'
                              ' found more requests than that for this builder/rev.' %
                              (count, builder, rev))
             return
+
+        if (seen * self.failure_tolerance_factor > rev_total and
+            seen > self.lower_trigger_limit):
+            self.log.warning('Would have triggered "%s" at %s but there are already '
+                             'too many failures.' % (builder, rev))
+            self.log.warning('There are %d total builds for this revision' % rev_total)
+            return
+
+        root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
+        payload = {
+            'count': count,
+        }
 
         if found_buildid:
             build_url = '%s/%s/build' % (root_url, branch)
@@ -235,17 +244,22 @@ class TreeWatcher(object):
             self.log.warning('Could not trigger "%s" at %s because there were '
                              'no builds found with that buildername to rebuild.' %
                              (builder, rev))
+
             if attempt > 4:
                 self.log.warning('Already tried to find something to rebuild '
                                  'for "%s" at %s, giving up' % (builder, rev))
                 return
+
             self.log.warning('Will re-attempt')
-            tm = Timer(90, self.trigger_n_times,
-                       args=[branch, rev, builder, count, attempt + 1])
+            tm = Timer(90, self.attempt_triggers,
+                       args=[branch, rev, builder, count, seen, attempt + 1])
             tm.start()
-            return
+            # Assume some subsequent attempt will be succesful for accounting
+            # purposes.
+            return count
 
         self._rebuild(build_url, payload)
+        return count
 
 
     def _get_ids_for_rev(self, branch, rev, builder):
@@ -260,10 +274,11 @@ class TreeWatcher(object):
                                 auth=self.auth)
         found_buildid = None
         found_requestid = None
-        count = 0
+        builder_total, rev_total = 0, 0
         for res in info_req.json():
+            rev_total += 1
             if res['buildername'] == builder:
-                count += 1
+                builder_total += 1
                 if 'build_id' in res and not found_buildid:
                     found_buildid = res['build_id']
                 if 'request_id' in res and not found_requestid:
@@ -272,7 +287,7 @@ class TreeWatcher(object):
         if not (found_buildid or found_requestid):
             self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
 
-        return found_buildid, found_requestid, count
+        return found_buildid, found_requestid, builder_total, rev_total
 
     def _rebuild(self, build_url, payload):
         # Actually do the triggering for a url and payload and keep track of the result.
