@@ -199,11 +199,6 @@ class TreeWatcher(object):
                            rev)
             return
 
-        self.global_trigger_count += count
-        self.log.warning('Up to %d total triggers have been performed by this service.' %
-                         self.global_trigger_count)
-
-
         found_buildid, found_requestid, builder_total, rev_total = self._get_ids_for_rev(branch, rev, builder)
 
         if builder_total > count:
@@ -217,8 +212,11 @@ class TreeWatcher(object):
             seen > self.lower_trigger_limit):
             self.log.warning('Would have triggered "%s" at %s but there are already '
                              'too many failures.' % (builder, rev))
-            self.log.warning('There are %d total builds for this revision' % rev_total)
             return
+
+        self.global_trigger_count += count
+        self.log.warning('Up to %d total triggers have been performed by this service.' %
+                         self.global_trigger_count)
 
         if not self.is_triggerbot_user(self.revmap[rev]['user']):
             self.log.warning('Would have triggered "%s" at %s %d times.' %
@@ -285,9 +283,6 @@ class TreeWatcher(object):
                     found_buildid = res['build_id']
                 if 'request_id' in res and not found_requestid:
                     found_requestid = res['request_id']
-
-        if not (found_buildid or found_requestid):
-            self.log.info('All builds found: \n%s' % pprint.pformat(info_req.json()))
 
         return found_buildid, found_requestid, builder_total, rev_total
 
