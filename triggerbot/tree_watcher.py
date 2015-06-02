@@ -203,14 +203,6 @@ class TreeWatcher(object):
         self.log.warning('Up to %d total triggers have been performed by this service.' %
                          self.global_trigger_count)
 
-        if not self.is_triggerbot_user(self.revmap[rev]['user']):
-            self.log.warning('Would have triggered "%s" at %s %d times.' %
-                             (builder, rev, count))
-            self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
-            return
-
-        self.log.info('attempt_triggers, attempt %d' % attempt)
-
 
         found_buildid, found_requestid, builder_total, rev_total = self._get_ids_for_rev(branch, rev, builder)
 
@@ -220,12 +212,22 @@ class TreeWatcher(object):
                              (count, builder, rev))
             return
 
+        self.log.info("Found %s jobs total for %s" % (rev_total, rev))
         if (seen * self.failure_tolerance_factor > rev_total and
             seen > self.lower_trigger_limit):
             self.log.warning('Would have triggered "%s" at %s but there are already '
                              'too many failures.' % (builder, rev))
             self.log.warning('There are %d total builds for this revision' % rev_total)
             return
+
+        if not self.is_triggerbot_user(self.revmap[rev]['user']):
+            self.log.warning('Would have triggered "%s" at %s %d times.' %
+                             (builder, rev, count))
+            self.log.warning('But %s is not a triggerbot user.' % self.revmap[rev]['user'])
+            # Pretend we did these triggers, just for accounting purposes.
+            return count
+
+        self.log.info('attempt_triggers, attempt %d' % attempt)
 
         root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
         payload = {
