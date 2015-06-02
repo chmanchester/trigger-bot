@@ -16,9 +16,8 @@ from .tree_watcher import TreeWatcher
 logger = None
 CONF_PATH = '../scratch/conf.json'
 triggerbot_users = []
-autoland_user = 'bind-autoland@mozilla.com'
 def is_triggerbot_user(m):
-    return m != autoland_user and m in triggerbot_users
+    m in triggerbot_users
 tw = None
 
 
