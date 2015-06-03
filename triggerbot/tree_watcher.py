@@ -131,7 +131,7 @@ class TreeWatcher(object):
             self.log.info('Added %d triggers for %s' % (req_count, rev))
             self.revmap[rev]['requested_trigger'] = req_count
         else:
-            self.log.info('Adding default failure retries for %s' % rev)
+            # self.log.info('Adding default failure retries for %s' % rev)
             self.revmap[rev]['fail_retrigger'] = TreeWatcher.default_retry
 
         self.revmap[rev]['rev_trigger_count'] = 0
