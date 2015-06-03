@@ -17,7 +17,7 @@ logger = None
 CONF_PATH = '../scratch/conf.json'
 triggerbot_users = []
 def is_triggerbot_user(m):
-    m in triggerbot_users
+    return m in triggerbot_users
 tw = None
 
 
