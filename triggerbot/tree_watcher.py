@@ -89,8 +89,8 @@ class TreeWatcher(object):
             seen_builders = self.revmap[rev]['seen_builders']
 
             if builder in seen_builders:
-                self.log.info('We\'ve already triggered "%s" at %s and don\'t'
-                              ' need to do it again' % (builder, rev))
+                self.log.info('We\'ve already seen "%s" at %s and don\'t'
+                              ' need to trigger it' % (builder, rev))
                 return
 
             seen_builders.add(builder)
@@ -98,10 +98,9 @@ class TreeWatcher(object):
             count = self.revmap[rev]['fail_retrigger']
             seen = self.revmap[rev]['rev_trigger_count']
 
-            if self.is_triggerbot_user(self.revmap[rev]['user']):
-                triggered = self.attempt_triggers(branch, rev, builder, count, seen)
-                if triggered:
-                    self.revmap[rev]['rev_trigger_count'] += triggered
+            triggered = self.attempt_triggers(branch, rev, builder, count, seen)
+            if triggered:
+                self.revmap[rev]['rev_trigger_count'] += triggered
                 self.log.info('Triggered %d of "%s" at %s' % (triggered, builder, rev))
 
 
@@ -181,6 +180,10 @@ class TreeWatcher(object):
             # revs and mark required triggers,
             self.add_rev(branch, rev, comments, user)
 
+
+        if not self.is_triggerbot_user(user):
+            return
+
         if key.endswith('started'):
             # If the job is starting and a user requested unconditional
             # retriggers, process them right away.
@@ -191,7 +194,7 @@ class TreeWatcher(object):
             self.failure_trigger(branch, rev, builder)
 
 
-    def attempt_triggers(self, branch, rev, builder, count, seen, attempt=0):
+    def attempt_triggers(self, branch, rev, builder, count, seen=0, attempt=0):
         if not re.match('[a-z0-9]{12}', rev):
             self.log.error('%s doesn\'t look like a valid revision, can\'t trigger it' %
                            rev)

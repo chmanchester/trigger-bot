@@ -101,22 +101,10 @@ class TestTriggerBot(unittest.TestCase):
         self.tw.trigger_limit = 6
         self.tw.auth = None
 
-        def record_trigger(branch, rev, builder, count):
+        def record_trigger(branch, rev, builder, count=0, attempt=0):
             self.triggers[(branch, rev, builder)] += count
 
-        self.tw.trigger_n_times = Mock(side_effect=record_trigger)
-
-    @with_sequence(limit_sequence)
-    def test_limit_triggers_for_rev(self):
-        # Test that after the limit is reached, failing jobs for a rev
-        # will result in no retriggers.
-        # We set the limit to 6 above, so we should have tried
-        # to trigger but failed the two last times.
-        self.assertEqual(6, sum(self.triggers.values()))
-        self.assert_triggers('try', 1, 'b3', TreeWatcher.default_retry)
-        self.assert_triggers('try', 1, 'b4', 0)
-        self.assert_triggers('try', 1, 'b5', 0)
-        self.assert_triggers('try', 1, 'b6', 0)
+        self.tw.attempt_triggers = Mock(side_effect=record_trigger)
 
     @with_sequence(request_start_sequence)
     def test_requested_trigger_at_start(self):
