@@ -102,6 +102,7 @@ class TreeWatcher(object):
                 triggered = self.attempt_triggers(branch, rev, builder, count, seen)
                 if triggered:
                     self.revmap[rev]['rev_trigger_count'] += triggered
+                self.log.info('Triggered %d of "%s" at %s' % (triggered, builder, rev))
 
 
     def requested_trigger(self, branch, rev, builder):
