@@ -71,7 +71,7 @@ def handle_message(data, message):
                 is_test]):
         return
 
-    logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
+    # logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
 
     tw.handle_message(key, branch, rev, builder, status, comments, user)
 

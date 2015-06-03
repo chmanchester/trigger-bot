@@ -78,7 +78,6 @@ class TreeWatcher(object):
         return rev in self.revmap
 
     def failure_trigger(self, branch, rev, builder):
-        self.log.info('Found a failure for %s and may retrigger' % rev)
 
         if rev in self.revmap:
 
@@ -99,12 +98,10 @@ class TreeWatcher(object):
             count = self.revmap[rev]['fail_retrigger']
             seen = self.revmap[rev]['rev_trigger_count']
 
-            self.log.warning('Triggering %d of "%s" at %s' % (count, builder, rev))
-            self.log.warning('Already triggered %d for %s' % (seen, rev))
-
-            triggered = self.attempt_triggers(branch, rev, builder, count, seen)
-            if triggered:
-                self.revmap[rev]['rev_trigger_count'] += triggered
+            if self.is_triggerbot_user(self.revmap[rev]['user']):
+                triggered = self.attempt_triggers(branch, rev, builder, count, seen)
+                if triggered:
+                    self.revmap[rev]['rev_trigger_count'] += triggered
 
 
     def requested_trigger(self, branch, rev, builder):
