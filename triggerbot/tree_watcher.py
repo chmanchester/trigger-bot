@@ -33,8 +33,8 @@ class TreeWatcher(object):
     default_retry = 2
     per_push_failures = 5
     # We may trigger more than this as long as the total is below this
-    # proportion of all builds for a push (5% of jobs for now).
-    failure_tolerance_factor = 20
+    # proportion of all builds for a push (10% of jobs for now).
+    failure_tolerance_factor = 10
 
     # See the comment below about pruning old revisions.
     revmap_threshold = 2000
