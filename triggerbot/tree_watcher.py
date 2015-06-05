@@ -41,6 +41,12 @@ class TreeWatcher(object):
     # If someone asks for more than 20 rebuilds on a push, only give them 20.
     requested_limit = 20
 
+    # Never trigger these builders (or a substring match). These are known
+    # to be hidden, they aren't useful for our purposes.
+    builder_blacklist = [
+        'test jetpack',
+    ]
+
     def __init__(self, ldap_auth, is_triggerbot_user=lambda _: True):
         self.revmap = defaultdict(dict)
         self.revmap_threshold = TreeWatcher.revmap_threshold
@@ -92,6 +98,13 @@ class TreeWatcher(object):
                 self.log.info('We\'ve already seen "%s" at %s and don\'t'
                               ' need to trigger it' % (builder, rev))
                 return
+
+            for entry in TreeWatcher.builder_blacklist:
+                if entry in builder:
+                    self.log.info('Would have triggered "%s" at %s due to failures,'
+                                  ' but that builder is explicitly excluded.' %
+                                  (builder, rev))
+                    return
 
             seen_builders.add(builder)
 
