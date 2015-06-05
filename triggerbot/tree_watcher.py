@@ -45,6 +45,7 @@ class TreeWatcher(object):
     # to be hidden, they aren't useful for our purposes.
     builder_blacklist = [
         'test jetpack',
+        'Android 4.3 armv7 API 11+ try debug',
     ]
 
     def __init__(self, ldap_auth, is_triggerbot_user=lambda _: True):
