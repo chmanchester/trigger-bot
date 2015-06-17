@@ -198,8 +198,8 @@ class TreeWatcher(object):
             self.add_rev(branch, rev, comments, user)
 
 
-        if not self.is_triggerbot_user(user):
-            return
+        # if not self.is_triggerbot_user(user):
+        #     return
 
         if key.endswith('started'):
             # If the job is starting and a user requested unconditional
