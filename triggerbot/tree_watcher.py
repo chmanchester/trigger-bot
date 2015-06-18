@@ -30,7 +30,7 @@ class TreeWatcher(object):
     # If we re-trigger for each orange and per-push orange
     # factor is approximately fixed, we shouldn't need to trigger
     # much more than that for any push that would be suitable to land.
-    default_retry = 2
+    default_retry = 1
     per_push_failures = 5
     # We may trigger more than this as long as the total is below this
     # proportion of all builds for a push (5% of jobs for now).
