@@ -293,7 +293,16 @@ class TreeWatcher(object):
         found_buildid = None
         found_requestid = None
         builder_total, rev_total = 0, 0
-        for res in info_req.json():
+
+        try:
+            results = info_req.json()
+        except ValueError:
+            self.log.error('Received an unexpected ValueError when retrieving '
+                           'information about %s from buildapi.' % rev)
+            self.log.error('Request status: %d' % info_req.status_code)
+            return
+
+        for res in results:
             rev_total += 1
             if res['buildername'] == builder:
                 builder_total += 1
