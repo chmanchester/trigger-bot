@@ -142,7 +142,7 @@ def run():
     user, pw = read_pulse_auth()
     get_users()
 
-    tw = TreeWatcher(ldap_auth, is_triggerbot_user)
+    tw = TreeWatcher(ldap_auth)
 
     consumer = consumers.BuildConsumer(applabel=service_name,
                                        user=user,
