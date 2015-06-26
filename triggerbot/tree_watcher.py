@@ -92,8 +92,8 @@ class TreeWatcher(object):
         if rev in self.revmap:
 
             if 'fail_retrigger' not in self.revmap[rev]:
-                self.log.error('Found no request to retrigger %s on failure' %
-                               rev)
+                self.log.info('Found no request to retrigger %s on failure' %
+                              rev)
                 return
 
             seen_builders = self.revmap[rev]['seen_builders']
@@ -141,13 +141,13 @@ class TreeWatcher(object):
 
     def add_rev(self, branch, rev, comments, user):
 
-        req_count = self.trigger_count_from_msg(comments)
+        req_count, should_retry = self.triggers_from_msg(comments)
 
         # Only trigger based on a request or a failure, not both.
         if req_count:
             self.log.info('Added %d triggers for %s' % (req_count, rev))
             self.revmap[rev]['requested_trigger'] = req_count
-        else:
+        elif should_retry:
             # self.log.info('Adding default failure retries for %s' % rev)
             self.revmap[rev]['fail_retrigger'] = TreeWatcher.default_retry
 
@@ -168,7 +168,7 @@ class TreeWatcher(object):
             self._prune_revmap()
 
 
-    def trigger_count_from_msg(self, msg):
+    def triggers_from_msg(self, msg):
 
         try_message = None
         all_try_args = None
@@ -185,10 +185,13 @@ class TreeWatcher(object):
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--rebuild', type=int, default=0)
+        parser.add_argument('--no-retry', action='store_false', dest='retry',
+                            default=True)
         (args, _) = parser.parse_known_args(all_try_args)
 
         limit = TreeWatcher.requested_limit
-        return args.rebuild if args.rebuild < limit else limit
+        rebuilds = args.rebuild if args.rebuild < limit else limit
+        return rebuilds, args.retry
 
 
     def handle_message(self, key, branch, rev, builder, status, comments, user):

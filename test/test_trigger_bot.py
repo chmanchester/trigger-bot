@@ -50,6 +50,19 @@ limit_sequence = [
     ('finished', 'try', 1, 'b5', 1, ''),
 ]
 
+no_retry_sequence = [
+    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none --no-retry'),
+    ('finished', 'try', 1, 'b1', 1, ''),
+    ('started', 'try', 1, 'b2', None, 'try: -b o -p linux -u xpcshell -t none --no-retry'),
+    ('finished', 'try', 1, 'b2', 1, ''),
+    ('started', 'try', 1, 'b3', None, 'try: -b o -p linux -u xpcshell -t none --no-retry'),
+    ('finished', 'try', 1, 'b3', 1, ''),
+    ('started', 'try', 1, 'b4', None, 'try: -b o -p linux -u xpcshell -t none --no-retry'),
+    ('finished', 'try', 1, 'b4', 1, ''),
+    ('started', 'try', 1, 'b5', None, 'try: -b o -p linux -u xpcshell -t none --no-retry'),
+    ('finished', 'try', 1, 'b5', 1, ''),
+]
+
 no_trigger_sequence = [
     ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none'),
     ('finished', 'try', 1, 'b1', 0, ''),
@@ -137,6 +150,11 @@ class TestTriggerBot(unittest.TestCase):
     def test_no_triggers(self):
         # Test that a passing job results in no triggers.
         self.assertEqual(0, sum(self.triggers.values()))
+
+    @with_sequence(no_retry_sequence)
+    def test_no_retriggers(self):
+        self.assertEqual(0, sum(self.triggers.values()))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=3)
