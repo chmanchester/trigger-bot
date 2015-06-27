@@ -216,7 +216,12 @@ class TreeWatcher(object):
                            rev)
             return
 
-        found_buildid, found_requestid, builder_total, rev_total = self._get_ids_for_rev(branch, rev, builder)
+        build_data = self._get_ids_for_rev(branch, rev, builder)
+
+        if build_data is None:
+            return
+
+        found_buildid, found_requestid, builder_total, rev_total = build_data
 
         if builder_total > count:
             self.log.warning('Would have triggered %d of "%s" at %s, but we\'ve already'
@@ -299,7 +304,7 @@ class TreeWatcher(object):
             self.log.error('Received an unexpected ValueError when retrieving '
                            'information about %s from buildapi.' % rev)
             self.log.error('Request status: %d' % info_req.status_code)
-            return
+            return None
 
         for res in results:
             rev_total += 1
