@@ -9,6 +9,7 @@ PACKAGE_VERSION = '0.1'
 deps = [
     'mozillapulse',
     'mock',
+    'treeherder-client>=1.5',
     'requests',
 ]
 
