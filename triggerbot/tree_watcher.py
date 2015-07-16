@@ -51,6 +51,8 @@ class TreeWatcher(object):
         self.is_triggerbot_user = is_triggerbot_user
         self.global_trigger_count = 0
         self.treeherder_client = TreeherderClient()
+        self.hidden_builders = set()
+        self.refresh_builder_counter = 0
 
     def _prune_revmap(self):
         # After a certain point we'll need to prune our revmap so it doesn't grow
@@ -78,16 +80,40 @@ class TreeWatcher(object):
     def known_rev(self, branch, rev):
         return rev in self.revmap
 
-    def get_excluded_jobs(self, branch, rev):
-        # Returns a list of jobs that are hidden in Treeherder for a revision.
+
+    def _get_jobs(self, branch, rev, hidden):
         results = self.treeherder_client.get_resultsets(branch, revision=rev)
         jobs = []
         if results:
             result_set_id = results[0]['id']
-            jobs = self.treeherder_client.get_jobs(branch, count=2000,
-                                                   result_set_id=result_set_id,
-                                                   visibility='excluded')
-        return [job['ref_data_name'] for job in jobs]
+            kwargs = {
+                'count': 2000,
+                'result_set_id': result_set_id,
+            }
+            if hidden:
+                kwargs['visibility'] = 'excluded'
+            jobs = self.treeherder_client.get_jobs(branch, **kwargs)
+        return [job['ref_data_name'] for job in jobs
+                if not re.match('[a-z0-9]{12}', job['ref_data_name'])]
+
+
+    def get_hidden_jobs(self, branch, rev):
+        return self._get_jobs(branch, rev, True)
+
+
+    def get_visible_jobs(self, branch, rev):
+        return self._get_jobs(branch, rev, False)
+
+
+    def update_hidden_builders(self, branch, rev):
+        hidden_builders = set(self.get_hidden_jobs(branch, rev))
+        visible_builders = set(self.get_visible_jobs(branch, rev))
+        self.hidden_builders -= visible_builders
+        self.hidden_builders |= hidden_builders
+        self.log.info('Updating hidden builders')
+        self.log.info('There are %d hidden builders on try' %
+                      len(self.hidden_builders))
+
 
     def failure_trigger(self, branch, rev, builder):
 
@@ -105,10 +131,9 @@ class TreeWatcher(object):
                               ' need to trigger it' % (builder, rev))
                 return
 
-            if builder in self.get_excluded_jobs(branch, rev):
+            if builder in self.hidden_builders:
                 self.log.info('Would have triggered "%s" at %s due to failures,'
-                                  ' but that builder is hidden.' %
-                                  (builder, rev))
+                              ' but that builder is hidden.' % (builder, rev))
                 return
 
             seen_builders.add(builder)
@@ -209,6 +234,12 @@ class TreeWatcher(object):
         if status in (1, 2):
             # A failing job is a candidate to retrigger.
             self.failure_trigger(branch, rev, builder)
+
+        if self.refresh_builder_counter == 0:
+            self.update_hidden_builders(branch, rev)
+            self.refresh_builder_counter = 300
+        else:
+            self.refresh_builder_counter -= 1
 
 
     def attempt_triggers(self, branch, rev, builder, count, seen=0, attempt=0):
