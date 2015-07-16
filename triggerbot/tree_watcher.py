@@ -87,10 +87,7 @@ class TreeWatcher(object):
             jobs = self.treeherder_client.get_jobs(branch, count=2000,
                                                    result_set_id=result_set_id,
                                                    visibility='excluded')
-        hidden_builders = [job['ref_data_name'] for job in jobs]
-        self.log.info('Treeheder considers the following builders to be hidden'
-                      ' for %s:\n%s' % (rev, pprint.pformat(hidden_builders)))
-        return hidden_builders
+        return [job['ref_data_name'] for job in jobs]
 
     def failure_trigger(self, branch, rev, builder):
 
