@@ -118,6 +118,7 @@ class TestTriggerBot(unittest.TestCase):
             self.triggers[(branch, rev, builder)] += count
 
         self.tw.attempt_triggers = Mock(side_effect=record_trigger)
+        self.tw.get_excluded_jobs = Mock(return_value=[])
 
     @with_sequence(request_start_sequence)
     def test_requested_trigger_at_start(self):

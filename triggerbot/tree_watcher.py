@@ -69,8 +69,7 @@ class TreeWatcher(object):
         # entries to sort.
         for rev, data in sorted(self.revmap.items(), key=lambda (k, v): v['time_seen']):
             if not prune_count:
-                self.log.info('Finished pruning, oldest rev is now: %s' %
-                            rev)
+                self.log.info('Finished pruning, oldest rev is now: %s' % rev)
                 return
 
             del self.revmap[rev]
@@ -86,10 +85,12 @@ class TreeWatcher(object):
         if results:
             result_set_id = results[0]['id']
             jobs = self.treeherder_client.get_jobs(branch, count=2000,
-                                              result_set_id=result_set_id,
-                                              visibility='excluded')
-
-        return [job['ref_data_name'] for job in jobs]
+                                                   result_set_id=result_set_id,
+                                                   visibility='excluded')
+        hidden_builders = [job['ref_data_name'] for job in jobs]
+        self.log.info('Treeheder considers the following builders to be hidden'
+                      ' for %s:\n%s' % (rev, pprint.pformat(hidden_builders)))
+        return hidden_builders
 
     def failure_trigger(self, branch, rev, builder):
 
