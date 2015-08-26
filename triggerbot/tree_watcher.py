@@ -159,7 +159,10 @@ class TreeWatcher(object):
                 return
 
             seen_builders.add(builder)
-            count = self.revmap[rev]['requested_trigger']
+            count, talos_count = self.revmap[rev]['requested_trigger']
+            if talos_count and 'talos' in builder:
+                count = talos_count
+
             self.log.info('May trigger %d requested jobs for "%s" at %s' %
                         (count, builder, rev))
             self.attempt_triggers(branch, rev, builder, count)
@@ -167,13 +170,14 @@ class TreeWatcher(object):
 
     def add_rev(self, branch, rev, comments, user):
 
-        req_count, should_retry = self.triggers_from_msg(comments)
+        req_count, req_talos_count, should_retry = self.triggers_from_msg(comments)
 
         # Only trigger based on a request or a failure, not both.
-        if req_count:
+        if req_count or req_talos_count:
             self.log.info('Added %d triggers for %s' % (req_count, rev))
-            self.revmap[rev]['requested_trigger'] = req_count
-        elif should_retry:
+            self.revmap[rev]['requested_trigger'] = (req_count, req_talos_count)
+
+        if should_retry and not req_count:
             # self.log.info('Adding default failure retries for %s' % rev)
             self.revmap[rev]['fail_retrigger'] = TreeWatcher.default_retry
 
@@ -215,13 +219,16 @@ class TreeWatcher(object):
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--rebuild', type=int, default=0)
+        parser.add_argument('--rebuild-talos', type=int, dest='rebuild_talos',
+                            default=0)
         parser.add_argument('--no-retry', action='store_false', dest='retry',
                             default=True)
         (args, _) = parser.parse_known_args(all_try_args)
 
         limit = TreeWatcher.requested_limit
         rebuilds = args.rebuild if args.rebuild < limit else limit
-        return rebuilds, args.retry
+        rebuild_talos = args.rebuild_talos if args.rebuild_talos < limit else limit
+        return rebuilds, rebuild_talos, args.retry
 
 
     def handle_message(self, key, branch, rev, builder, status, comments, user):
