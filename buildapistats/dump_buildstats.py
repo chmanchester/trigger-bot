@@ -31,7 +31,7 @@ def jobs_by_day(day, month, year):
     return info_req.json()
 
 def triggerbot_jobs(jobs):
-    tbot_reason = 'Self-serve: Rebuilt by mozci-bot@mozilla.com'
+    tbot_reason = 'Self-serve: Rebuilt by trigger-bot@mozilla.com'
     return [j for j in jobs
             if 'requests' in j and j['requests'][0]['reason'] == tbot_reason or
             'reason' in j and j['reason'] == tbot_reason]
@@ -68,7 +68,7 @@ def jobs_by_month(month, year, days):
     return all_jobs, tbot_jobs, failed_tbot_jobs, passed_tbot_jobs
 
 
-days, month, year = 14, '07', '2015'
+days, month, year = 27, '08', '2015'
 all, tbot, fails, passes = jobs_by_month(month, year, days)
 
 print """
