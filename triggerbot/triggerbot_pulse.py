@@ -61,7 +61,7 @@ def extract_payload(payload, key):
 
     # Bug 1208104: Force triggering off for Windows testers until
     # we have control of the backlog.
-    if platform in ('win64', 'win32'):
+    if platform.startswith('win64') or platform.startswith('win32'):
         match = None
 
     return branch, rev, builder, status, match is not None, comments, user
