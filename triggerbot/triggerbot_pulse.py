@@ -35,8 +35,6 @@ def extract_payload(payload, key):
             builder = prop[1]
         if prop[0] == 'branch':
             branch = prop[1]
-        if prop[0] == 'platform':
-            platform = prop[1]
 
     if rev and len(rev) > 12:
         rev = rev[:12]
@@ -59,11 +57,6 @@ def extract_payload(payload, key):
                              branch)
     match = unittest_re.match(key)
 
-    # Bug 1208104: Force triggering off for Windows testers until
-    # we have control of the backlog.
-    if platform.startswith('win64') or platform.startswith('win32'):
-        match = None
-
     return branch, rev, builder, status, match is not None, comments, user
 
 
@@ -77,6 +70,8 @@ def handle_message(data, message):
     if not all([branch == 'try',
                 is_test]):
         return
+
+    # logger.info('Saw %s at %s with "%s"' % (user, rev, comments))
 
     tw.handle_message(key, branch, rev, builder, status, comments, user)
 
