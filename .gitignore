@@ -2,3 +2,13 @@
 \.#*
 \#*
 *.egg-info/*
+
+# venv
+venv
+
+# tox
+.tox
+
+# coverage
+.coverage
+.cache

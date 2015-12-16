@@ -16,6 +16,8 @@ from .tree_watcher import TreeWatcher
 logger = None
 CONF_PATH = '../scratch/conf.json'
 triggerbot_users = []
+
+
 def is_triggerbot_user(m):
     return m in triggerbot_users
 tw = None
@@ -53,7 +55,8 @@ def extract_payload(payload, key):
     # See if this is a unit test (borrowed from the pulsetranslator).
     # Pretty terrible, but test start is necessary (and ignored by
     # the normalized build exchange).
-    unittest_re = re.compile(r'build\.((%s)[-|_](.*?)(-debug|-o-debug|-pgo|_pgo|_test)?[-|_](test|unittest|pgo)-(.*?))\.(\d+)\.(started|finished)' %
+    unittest_re = re.compile(r'build\.((%s)[-|_](.*?)(-debug|-o-debug|-pgo|_pgo|_test)?[-|_]'
+                             '(test|unittest|pgo)-(.*?))\.(\d+)\.(started|finished)' %
                              branch)
     match = unittest_re.match(key)
 
@@ -83,12 +86,14 @@ def read_pulse_auth():
         conf = json.load(f)
         return conf['pulse_user'], conf['pulse_pw']
 
+
 def read_ldap_auth():
     if os.environ.get('TB_LDAP_USERNAME') and os.environ.get('TB_LDAP_PW'):
         return os.environ['TB_LDAP_USERNAME'], os.environ['TB_LDAP_PW']
     with open(CONF_PATH) as f:
         conf = json.load(f)
         return conf['ldap_user'], conf['ldap_pw']
+
 
 def get_users():
     global triggerbot_users
@@ -98,6 +103,7 @@ def get_users():
     with open(CONF_PATH) as f:
         conf = json.load(f)
         triggerbot_users = conf['triggerbot_users']
+
 
 def setup_logging(name, log_dir, log_stderr):
     logger = logging.getLogger(name)
@@ -121,6 +127,7 @@ def setup_logging(name, log_dir, log_stderr):
         logger.addHandler(handler)
 
     return logger
+
 
 def run():
 

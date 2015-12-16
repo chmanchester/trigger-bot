@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import logging
-import sys
 import unittest
 
 from mock import Mock
@@ -21,6 +19,7 @@ class with_sequence(object):
 
     def __call__(self, f):
         inst = self
+
         def wrapped(self, *args, **kwargs):
             for key, branch, rev, builder, status, comments in inst._seq:
                 self.tw.handle_message(key, branch, rev, builder, status,
@@ -99,6 +98,7 @@ revmap_limit_sequence = [
     ('started', 'try', 9, 'b1', None, 'try: -b o -p linux -u xpcshell -t none'),
     ('started', 'try', 10, 'b1', None, 'try: -b o -p linux -u xpcshell -t none'),
 ]
+
 
 class TestTriggerBot(unittest.TestCase):
 

@@ -4,17 +4,22 @@
 
 from setuptools import setup, find_packages
 
-PACKAGE_VERSION = '0.1'
-
-deps = [
-    'mozillapulse',
-    'mock',
-    'treeherder-client>=2.0.1',
-    'requests',
-]
-
-setup(name='trigger-bot',
-      version=PACKAGE_VERSION,
+setup(
+      name='trigger-bot',
+      version='0.1',
+      packages=find_packages(),
+      entry_points={
+          'console_scripts': [
+              'run-trigger-bot = triggerbot.triggerbot_pulse:run',
+           ],
+      },
+      install_requires=[
+           'buildapi-client>=0.1'
+           'mozillapulse',
+           'mozci>=0.25.5',
+           'requests',
+           'treeherder-client>=2.0.1'
+      ],
       description='A pulse service for triggering builds with mozci.',
       classifiers=['Intended Audience :: Developers',
                    'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)',
@@ -27,11 +32,6 @@ setup(name='trigger-bot',
       author='Chris Manchester',
       author_email='cmanchester@mozilla.com',
       license='MPL 2.0',
-      packages=find_packages(),
       include_package_data=True,
-      zip_safe=False,
-      install_requires=deps,
-      entry_points="""
-        [console_scripts]
-        run-trigger-bot = triggerbot.triggerbot_pulse:run
-      """)
+      zip_safe=False
+)
