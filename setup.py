@@ -14,10 +14,8 @@ setup(
            ],
       },
       install_requires=[
-           'buildapi-client>=0.1'
            'mozillapulse',
            'mozci>=0.25.5',
-           'requests',
            'treeherder-client>=2.0.1'
       ],
       description='A pulse service for triggering builds with mozci.',
