@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import requests
-import pprint
 import json
 
 
@@ -21,14 +20,16 @@ def read_ldap_auth():
         conf = json.load(f)
         return conf['ldap_user'], conf['ldap_pw']
 
-auth = read_ldap_auth()
 
+auth = read_ldap_auth()
 try_jobs = '/try?date=%(year)s-%(month)s-%(day)s&format=json'
+
 
 def jobs_by_day(day, month, year):
     url = '%s%s' % (base_url, try_jobs % locals())
     info_req = requests.get(url, auth=auth)
     return info_req.json()
+
 
 def triggerbot_jobs(jobs):
     tbot_reason = 'Self-serve: Rebuilt by trigger-bot@mozilla.com'
@@ -36,13 +37,16 @@ def triggerbot_jobs(jobs):
             if 'requests' in j and j['requests'][0]['reason'] == tbot_reason or
             'reason' in j and j['reason'] == tbot_reason]
 
+
 def failed_jobs(jobs):
     return [j for j in jobs
             if 'status' in j and j['status'] in (1, 2)]
 
+
 def passed_jobs(jobs):
     return [j for j in jobs
             if 'status' in j and j['status'] == 0]
+
 
 def jobs_by_month(month, year, days):
     # Get stats on the first "days" days in the given month.
@@ -82,4 +86,3 @@ Summary for the first %d days of %s %s:
        all, tbot, (tbot/float(all)) * 100,
        fails, (fails/float(tbot)) * 100,
        passes, (passes/float(tbot)) * 100)
-

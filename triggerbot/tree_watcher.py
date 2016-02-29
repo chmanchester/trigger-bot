@@ -1,11 +1,10 @@
+#!/usr/bin/env python
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
-import json
 import logging
-import pprint
 import re
 import requests
 import time
@@ -80,7 +79,6 @@ class TreeWatcher(object):
     def known_rev(self, branch, rev):
         return rev in self.revmap
 
-
     def _get_jobs(self, branch, rev, hidden):
         results = self.treeherder_client.get_resultsets(branch, revision=rev)
         jobs = []
@@ -96,14 +94,11 @@ class TreeWatcher(object):
         return [job['ref_data_name'] for job in jobs
                 if not re.match('[a-z0-9]{12}', job['ref_data_name'])]
 
-
     def get_hidden_jobs(self, branch, rev):
         return self._get_jobs(branch, rev, True)
 
-
     def get_visible_jobs(self, branch, rev):
         return self._get_jobs(branch, rev, False)
-
 
     def update_hidden_builders(self, branch, rev):
         hidden_builders = set(self.get_hidden_jobs(branch, rev))
@@ -113,7 +108,6 @@ class TreeWatcher(object):
         self.log.info('Updating hidden builders')
         self.log.info('There are %d hidden builders on try' %
                       len(self.hidden_builders))
-
 
     def failure_trigger(self, branch, rev, builder):
 
@@ -146,7 +140,6 @@ class TreeWatcher(object):
                 self.revmap[rev]['rev_trigger_count'] += triggered
                 self.log.info('Triggered %d of "%s" at %s' % (triggered, builder, rev))
 
-
     def requested_trigger(self, branch, rev, builder):
         if rev in self.revmap and 'requested_trigger' in self.revmap[rev]:
 
@@ -155,7 +148,7 @@ class TreeWatcher(object):
 
             if builder in seen_builders:
                 self.log.info('We already triggered "%s" at %s don\'t need'
-                            ' to do it again' % (builder, rev))
+                              ' to do it again' % (builder, rev))
                 return
 
             seen_builders.add(builder)
@@ -164,9 +157,8 @@ class TreeWatcher(object):
                 count = talos_count
 
             self.log.info('May trigger %d requested jobs for "%s" at %s' %
-                        (count, builder, rev))
+                          (count, builder, rev))
             self.attempt_triggers(branch, rev, builder, count)
-
 
     def add_rev(self, branch, rev, comments, user):
 
@@ -196,7 +188,6 @@ class TreeWatcher(object):
 
         if len(self.revmap.keys()) > self.revmap_threshold:
             self._prune_revmap()
-
 
     def triggers_from_msg(self, msg):
 
@@ -230,7 +221,6 @@ class TreeWatcher(object):
         rebuild_talos = args.rebuild_talos if args.rebuild_talos < limit else limit
         return rebuilds, rebuild_talos, args.retry
 
-
     def handle_message(self, key, branch, rev, builder, status, comments, user):
         if not self.known_rev(branch, rev) and comments:
             # First time we've seen this revision? Add it to known
@@ -251,7 +241,6 @@ class TreeWatcher(object):
             self.refresh_builder_counter = 300
         else:
             self.refresh_builder_counter -= 1
-
 
     def attempt_triggers(self, branch, rev, builder, count, seen=0, attempt=0):
         if not re.match('[a-z0-9]{12}', rev):
@@ -274,7 +263,7 @@ class TreeWatcher(object):
 
         self.log.info("Found %s jobs total for %s" % (rev_total, rev))
         if (seen * self.failure_tolerance_factor > rev_total and
-            seen > self.lower_trigger_limit):
+                seen > self.lower_trigger_limit):
             self.log.warning('Would have triggered "%s" at %s but there are already '
                              'too many failures.' % (builder, rev))
             return
@@ -326,7 +315,6 @@ class TreeWatcher(object):
         self._rebuild(build_url, payload)
         return count
 
-
     def _get_ids_for_rev(self, branch, rev, builder):
         # Get the request or build id associated with the given branch/rev/builder,
         # if any.
@@ -371,4 +359,3 @@ class TreeWatcher(object):
             auth=self.auth
         )
         self.log.info('Requested job, return: %s' % req.status_code)
-
