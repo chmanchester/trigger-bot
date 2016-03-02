@@ -6,19 +6,22 @@
 import argparse
 import logging
 import re
-import requests
 import time
 
 from threading import Timer
 from collections import defaultdict
+
+from mozci.query_jobs import BuildApi
 from thclient import TreeherderClient
+
+
+QUERY_SOURCE = BuildApi()
 
 
 class TreeWatcher(object):
     """Class to keep track of test jobs starting and finishing, known
     revisions and builders, and re-trigger jobs in either when a job
     fails or a when requested by a user.
-
     Redundant triggers are prevented by keeping track of each buildername,
     tree, revision we've already triggered. The invariant is that for
     any (buildername, tree, revision) combination, we will only issue triggers
@@ -76,11 +79,11 @@ class TreeWatcher(object):
             del self.revmap[rev]
             prune_count -= 1
 
-    def known_rev(self, branch, rev):
+    def known_rev(self, repo_name, rev):
         return rev in self.revmap
 
-    def _get_jobs(self, branch, rev, hidden):
-        results = self.treeherder_client.get_resultsets(branch, revision=rev)
+    def _get_jobs(self, repo_name, rev, hidden):
+        results = self.treeherder_client.get_resultsets(repo_name, revision=rev)
         jobs = []
         if results:
             result_set_id = results[0]['id']
@@ -90,26 +93,26 @@ class TreeWatcher(object):
             }
             if hidden:
                 kwargs['visibility'] = 'excluded'
-            jobs = self.treeherder_client.get_jobs(branch, **kwargs)
+            jobs = self.treeherder_client.get_jobs(repo_name, **kwargs)
         return [job['ref_data_name'] for job in jobs
                 if not re.match('[a-z0-9]{12}', job['ref_data_name'])]
 
-    def get_hidden_jobs(self, branch, rev):
-        return self._get_jobs(branch, rev, True)
+    def get_hidden_jobs(self, repo_name, rev):
+        return self._get_jobs(repo_name, rev, True)
 
-    def get_visible_jobs(self, branch, rev):
-        return self._get_jobs(branch, rev, False)
+    def get_visible_jobs(self, repo_name, rev):
+        return self._get_jobs(repo_name, rev, False)
 
-    def update_hidden_builders(self, branch, rev):
-        hidden_builders = set(self.get_hidden_jobs(branch, rev))
-        visible_builders = set(self.get_visible_jobs(branch, rev))
+    def update_hidden_builders(self, repo_name, rev):
+        hidden_builders = set(self.get_hidden_jobs(repo_name, rev))
+        visible_builders = set(self.get_visible_jobs(repo_name, rev))
         self.hidden_builders -= visible_builders
         self.hidden_builders |= hidden_builders
         self.log.info('Updating hidden builders')
         self.log.info('There are %d hidden builders on try' %
                       len(self.hidden_builders))
 
-    def failure_trigger(self, branch, rev, builder):
+    def failure_trigger(self, repo_name, rev, builder):
 
         if rev in self.revmap:
 
@@ -135,12 +138,12 @@ class TreeWatcher(object):
             count = self.revmap[rev]['fail_retrigger']
             seen = self.revmap[rev]['rev_trigger_count']
 
-            triggered = self.attempt_triggers(branch, rev, builder, count, seen)
+            triggered = self.attempt_triggers(repo_name, rev, builder, count, seen)
             if triggered:
                 self.revmap[rev]['rev_trigger_count'] += triggered
                 self.log.info('Triggered %d of "%s" at %s' % (triggered, builder, rev))
 
-    def requested_trigger(self, branch, rev, builder):
+    def requested_trigger(self, repo_name, rev, builder):
         if rev in self.revmap and 'requested_trigger' in self.revmap[rev]:
 
             self.log.info('Found a request to trigger %s and may retrigger' % rev)
@@ -158,9 +161,9 @@ class TreeWatcher(object):
 
             self.log.info('May trigger %d requested jobs for "%s" at %s' %
                           (count, builder, rev))
-            self.attempt_triggers(branch, rev, builder, count)
+            self.attempt_triggers(repo_name, rev, builder, count)
 
-    def add_rev(self, branch, rev, comments, user):
+    def add_rev(self, repo_name, rev, comments, user):
 
         req_count, req_talos_count, should_retry = self.triggers_from_msg(comments)
 
@@ -221,34 +224,34 @@ class TreeWatcher(object):
         rebuild_talos = args.rebuild_talos if args.rebuild_talos < limit else limit
         return rebuilds, rebuild_talos, args.retry
 
-    def handle_message(self, key, branch, rev, builder, status, comments, user):
-        if not self.known_rev(branch, rev) and comments:
+    def handle_message(self, key, repo_name, rev, builder, status, comments, user):
+        if not self.known_rev(repo_name, rev) and comments:
             # First time we've seen this revision? Add it to known
             # revs and mark required triggers,
-            self.add_rev(branch, rev, comments, user)
+            self.add_rev(repo_name, rev, comments, user)
 
         if key.endswith('started'):
             # If the job is starting and a user requested unconditional
             # retriggers, process them right away.
-            self.requested_trigger(branch, rev, builder)
+            self.requested_trigger(repo_name, rev, builder)
 
         if status in (1, 2):
             # A failing job is a candidate to retrigger.
-            self.failure_trigger(branch, rev, builder)
+            self.failure_trigger(repo_name, rev, builder)
 
         if self.refresh_builder_counter == 0:
-            self.update_hidden_builders(branch, rev)
+            self.update_hidden_builders(repo_name, rev)
             self.refresh_builder_counter = 300
         else:
             self.refresh_builder_counter -= 1
 
-    def attempt_triggers(self, branch, rev, builder, count, seen=0, attempt=0):
+    def attempt_triggers(self, repo_name, rev, builder, count, seen=0, attempt=0):
         if not re.match('[a-z0-9]{12}', rev):
             self.log.error('%s doesn\'t look like a valid revision, can\'t trigger it' %
                            rev)
             return
 
-        build_data = self._get_ids_for_rev(branch, rev, builder)
+        build_data = self._get_ids_for_rev(repo_name, rev, builder)
 
         if build_data is None:
             return
@@ -281,17 +284,18 @@ class TreeWatcher(object):
 
         self.log.info('attempt_triggers, attempt %d' % attempt)
 
-        root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
-        payload = {
-            'count': count,
-        }
-
         if found_buildid:
-            build_url = '%s/%s/build' % (root_url, branch)
-            payload['build_id'] = found_buildid
+            QUERY_SOURCE.retrigger_build(uuid=found_buildid,
+                                         auth=self.auth,
+                                         repo_name=repo_name,
+                                         count=count,
+                                         dry_run=False)
         elif found_requestid:
-            build_url = '%s/%s/request' % (root_url, branch)
-            payload['request_id'] = found_requestid
+            QUERY_SOURCE.retrigger(uuid=found_requestid,
+                                   auth=self.auth,
+                                   repo_name=repo_name,
+                                   count=count,
+                                   dry_run=False)
         else:
             # For a short time after a job starts it seems there might not be
             # any info associated with this job/builder in.
@@ -306,35 +310,29 @@ class TreeWatcher(object):
 
             self.log.warning('Will re-attempt')
             tm = Timer(90, self.attempt_triggers,
-                       args=[branch, rev, builder, count, seen, attempt + 1])
+                       args=[repo_name, rev, builder, count, seen, attempt + 1])
             tm.start()
             # Assume some subsequent attempt will be succesful for accounting
             # purposes.
             return count
 
-        self._rebuild(build_url, payload)
         return count
 
-    def _get_ids_for_rev(self, branch, rev, builder):
+    def _get_ids_for_rev(self, repo_name, rev, builder):
         # Get the request or build id associated with the given branch/rev/builder,
         # if any.
-        root_url = 'https://secure.pub.build.mozilla.org/buildapi/self-serve'
-
-        # First find the build_id for the job to rebuild
-        build_info_url = '%s/%s/rev/%s?format=json' % (root_url, branch, rev)
-        info_req = requests.get(build_info_url,
-                                headers={'Accept': 'application/json'},
-                                auth=self.auth)
         found_buildid = None
         found_requestid = None
         builder_total, rev_total = 0, 0
-
+        # First find the build_id for the job to rebuild
         try:
-            results = info_req.json()
+            results = QUERY_SOURCE.get_all_jobs(repo_name, rev)
         except ValueError:
             self.log.error('Received an unexpected ValueError when retrieving '
                            'information about %s from buildapi.' % rev)
-            self.log.error('Request status: %d' % info_req.status_code)
+            if results == []:
+                self.log.error('Request status not in 200.')
+
             return None
 
         for res in results:
@@ -347,15 +345,3 @@ class TreeWatcher(object):
                     found_requestid = res['request_id']
 
         return found_buildid, found_requestid, builder_total, rev_total
-
-    def _rebuild(self, build_url, payload):
-        # Actually do the triggering for a url and payload and keep track of the result.
-        self.log.info('Triggering url: %s' % build_url)
-        self.log.debug('Triggering payload:\n\t%s' % payload)
-        req = requests.post(
-            build_url,
-            headers={'Accept': 'application/json'},
-            data=payload,
-            auth=self.auth
-        )
-        self.log.info('Requested job, return: %s' % req.status_code)
