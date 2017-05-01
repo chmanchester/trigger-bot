@@ -40,7 +40,9 @@ class TreeWatcher(object):
     # See the comment below about pruning old revisions.
     revmap_threshold = 2000
     # If someone asks for more than 20 rebuilds on a push, only give them 20.
-    requested_limit = 20
+    # requested_limit = 20
+    # Temporarily restrict to 5.
+    requested_limit = 5
 
     def __init__(self, ldap_auth, is_triggerbot_user=lambda _: True):
         self.revmap = defaultdict(dict)
