@@ -40,9 +40,7 @@ class TreeWatcher(object):
     # See the comment below about pruning old revisions.
     revmap_threshold = 2000
     # If someone asks for more than 20 rebuilds on a push, only give them 20.
-    # requested_limit = 20
-    # Temporarily restrict to 5.
-    requested_limit = 5
+    requested_limit = 20
 
     def __init__(self, ldap_auth, is_triggerbot_user=lambda _: True):
         self.revmap = defaultdict(dict)
@@ -225,9 +223,15 @@ class TreeWatcher(object):
                             default=0)
         parser.add_argument('--no-retry', action='store_false', dest='retry',
                             default=True)
+        parser.add_argument('-u', '--unittests', dest='tests')
+        parser.add_argument('-p', '--platform', dest='platforms')
         (args, _) = parser.parse_known_args(all_try_args)
 
         limit = TreeWatcher.requested_limit
+        if args.platforms == 'all':
+            limit = 5
+        if args.tests == 'all':
+            limit = 1
         rebuilds = args.rebuild if args.rebuild < limit else limit
         rebuild_talos = args.rebuild_talos if args.rebuild_talos < limit else limit
         return rebuilds, rebuild_talos, args.retry

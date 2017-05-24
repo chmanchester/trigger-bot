@@ -79,12 +79,20 @@ no_trigger_sequence = [
 ]
 
 request_start_sequence = [
-    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none --rebuild 5'),
+    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none --rebuild 10'),
 ]
 
 request_fail_sequence = [
-    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none --rebuild 5'),
+    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u xpcshell -t none --rebuild 10'),
     ('finished', 'try', 1, 'b1', 1, ''),
+]
+
+all_test_sequence = [
+    ('started', 'try', 1, 'b1', None, 'try: -b o -p linux -u all -t none --rebuild 10'),
+]
+
+all_platform_sequence = [
+    ('started', 'try', 1, 'b1', None, 'try: -b o -p all -u xpcshell -t none --rebuild 10'),
 ]
 
 revmap_limit_sequence = [
@@ -122,15 +130,24 @@ class TestTriggerBot(unittest.TestCase):
 
     @with_sequence(request_start_sequence)
     def test_requested_trigger_at_start(self):
-        # Test that requested triggers are processed
-        # at the start of a job.
+        # Test that requested triggers are processed at the start of a job.
+        self.assert_triggers('try', 1, 'b1', 10)
+
+    @with_sequence(all_test_sequence)
+    def test_all_test_trigger_limit(self):
+        # Test that "-u all" limits --rebuild to 1 retriggers.
+        self.assert_triggers('try', 1, 'b1', 1)
+
+    @with_sequence(all_platform_sequence)
+    def test_all_platform_trigger_limit(self):
+        # Test that "-p all" limits --rebuild to 5 retriggers.
         self.assert_triggers('try', 1, 'b1', 5)
 
     @with_sequence(request_fail_sequence)
     def test_requested_trigger_with_fail(self):
         # Test that requested triggers make a failure
         # ineligible for further triggers.
-        self.assert_triggers('try', 1, 'b1', 5)
+        self.assert_triggers('try', 1, 'b1', 10)
 
     @with_sequence(failure_sequence)
     def test_failure_triggers(self):
